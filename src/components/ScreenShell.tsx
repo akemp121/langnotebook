@@ -29,7 +29,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
   },
   content: {
+    alignSelf: 'center',
     flex: 1,
-    gap: spacing.lg,
+    gap: spacing.xl,
+    maxWidth: 720,
+    width: '100%',
   },
 });
