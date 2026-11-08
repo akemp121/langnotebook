@@ -1,8 +1,7 @@
-import { router } from 'expo-router';
-
 import { ClassificationPracticePreview } from '@/components/ClassificationPracticePreview';
 import { ConversationPracticePreview } from '@/components/ConversationPracticePreview';
 import { LessonLayout, type LessonSection } from '@/components/LessonLayout';
+import { useLessonBackNavigation } from '@/hooks/useLessonBackNavigation';
 
 const grammarPreviewSections: readonly LessonSection[] = [
   {
@@ -91,6 +90,8 @@ const grammarPreviewSections: readonly LessonSection[] = [
 ];
 
 export default function GrammarPreviewRoute() {
+  const returnToLessonList = useLessonBackNavigation();
+
   return (
     <LessonLayout
       backAccessibilityLabel="Return to lesson previews"
@@ -98,7 +99,7 @@ export default function GrammarPreviewRoute() {
       introduction={[
         'A static notebook preview with placeholder grammar explanations, a nonfunctional classification card, and follow-on sections in one continuous scroll.',
       ]}
-      onBack={() => router.replace('/')}
+      onBack={returnToLessonList}
       sections={grammarPreviewSections}
       title="Grammar notebook"
     />

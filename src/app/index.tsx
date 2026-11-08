@@ -1,5 +1,6 @@
-import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Link } from 'expo-router';
+import { forwardRef, type ComponentRef } from 'react';
+import { Pressable, StyleSheet, View, type PressableProps } from 'react-native';
 
 import { AppText } from '@/components/AppText';
 import { ScreenShell } from '@/components/ScreenShell';
@@ -31,39 +32,58 @@ type LessonPreviewCardProps = {
   preview: LessonPreview;
 };
 
-function LessonPreviewCard({ preview }: LessonPreviewCardProps) {
+// Keep the style callback inside the component: Link's slot merges style props
+// as objects, which would otherwise discard the Pressable callback's styles.
+const PreviewCardPressable = forwardRef<ComponentRef<typeof Pressable>, PressableProps>(function PreviewCardPressable(
+  { style, ...props },
+  ref,
+) {
   return (
     <Pressable
-      accessibilityHint={`Opens the ${preview.title.toLowerCase()} shell`}
-      accessibilityLabel={preview.title}
-      accessibilityRole="button"
-      onPress={() => router.push(preview.href)}
-      style={({ pressed }) => [styles.previewCard, pressed ? styles.previewCardPressed : null]}
-    >
-      <View style={styles.cardHeader}>
-        <View style={styles.titleGroup}>
-          <AppText variant="caption">{preview.eyebrow}</AppText>
-          <AppText variant="sectionHeading">{preview.title}</AppText>
+      {...props}
+      ref={ref}
+      style={(state) => [
+        styles.previewCard,
+        typeof style === 'function' ? style(state) : style,
+        state.pressed ? styles.previewCardPressed : null,
+      ]}
+    />
+  );
+});
+
+function LessonPreviewCard({ preview }: LessonPreviewCardProps) {
+  return (
+    <Link href={preview.href} asChild>
+      <PreviewCardPressable
+        accessibilityHint={`Opens the ${preview.title.toLowerCase()} shell`}
+        accessibilityLabel={preview.title}
+        accessibilityRole="link"
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.titleGroup}>
+            <AppText variant="caption">{preview.eyebrow}</AppText>
+            <AppText variant="sectionHeading">{preview.title}</AppText>
+          </View>
+          <View style={styles.statusPill}>
+            <AppText style={styles.statusText}>{preview.estimatedLength}</AppText>
+          </View>
         </View>
-        <View style={styles.statusPill}>
-          <AppText style={styles.statusText}>{preview.estimatedLength}</AppText>
+
+        <AppText variant="bodyLarge" style={styles.description}>
+          {preview.summary}
+        </AppText>
+
+        <View style={styles.layoutNote}>
+          <AppText variant="caption">Layout</AppText>
+          <AppText>{preview.layoutNote}</AppText>
         </View>
-      </View>
 
-      <AppText variant="bodyLarge" style={styles.description}>
-        {preview.summary}
-      </AppText>
-
-      <View style={styles.layoutNote}>
-        <AppText variant="caption">Layout</AppText>
-        <AppText>{preview.layoutNote}</AppText>
-      </View>
-
-      <View style={styles.actionRow}>
-        <AppText style={styles.actionText}>Open shell</AppText>
-        <AppText style={styles.actionArrow}>→</AppText>
-      </View>
-    </Pressable>
+        <View style={styles.actionRow}>
+          <AppText style={styles.actionText}>Open shell</AppText>
+          <AppText style={styles.actionArrow}>→</AppText>
+        </View>
+      </PreviewCardPressable>
+    </Link>
   );
 }
 

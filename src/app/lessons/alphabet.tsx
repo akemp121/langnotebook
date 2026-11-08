@@ -1,7 +1,6 @@
-import { router } from 'expo-router';
-
 import { AlphabetPreview } from '@/components/AlphabetPreview';
 import { LessonLayout, type LessonSection } from '@/components/LessonLayout';
+import { useLessonBackNavigation } from '@/hooks/useLessonBackNavigation';
 
 const alphabetPreviewSections: readonly LessonSection[] = [
   {
@@ -34,6 +33,8 @@ const alphabetPreviewSections: readonly LessonSection[] = [
 ];
 
 export default function AlphabetPreviewRoute() {
+  const returnToLessonList = useLessonBackNavigation();
+
   return (
     <LessonLayout
       backAccessibilityLabel="Return to lesson previews"
@@ -41,7 +42,7 @@ export default function AlphabetPreviewRoute() {
       introduction={[
         'A notebook-style preview of letter cards, pronunciation hints, and example-word audio buttons using sample text only.',
       ]}
-      onBack={() => router.replace('/')}
+      onBack={returnToLessonList}
       sections={alphabetPreviewSections}
       title="Alphabet"
     />

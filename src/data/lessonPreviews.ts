@@ -20,7 +20,7 @@ export const lessonPreviews: readonly LessonPreview[] = [
     summary: 'A static entry for the alphabet layout: letter cards, pronunciation hints, and audio controls later.',
     layoutNote: 'Explainer text → letter activity card → short reflection text',
     estimatedLength: 'Preview only',
-    href: './lessons/alphabet',
+    href: '/lessons/alphabet',
   },
   {
     id: 'grammar-notebook',
@@ -29,6 +29,6 @@ export const lessonPreviews: readonly LessonPreview[] = [
     summary: 'A static entry for the grammar layout: concise explanations and practice cards in one scroll later.',
     layoutNote: 'Concept text → classification practice card → follow-on sections',
     estimatedLength: 'Preview only',
-    href: './lessons/grammar',
+    href: '/lessons/grammar',
   },
 ] as const;
