@@ -1,0 +1,190 @@
+import type { ReactNode } from 'react';
+import type { PressableProps } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { palette, radii, spacing } from '@/styles/theme';
+
+import { ActivityCard } from './ActivityCard';
+import { AppText } from './AppText';
+
+export type LessonTextBlock = {
+  id: string;
+  kind: 'text';
+  paragraphs: readonly string[];
+};
+
+export type LessonActivityBlock = {
+  id: string;
+  kind: 'activity';
+  children: ReactNode;
+  eyebrow?: string;
+  title?: string;
+};
+
+export type LessonBlock = LessonTextBlock | LessonActivityBlock;
+
+export type LessonSection = {
+  id: string;
+  blocks: readonly LessonBlock[];
+  title: string;
+};
+
+type LessonLayoutProps = {
+  onBack: NonNullable<PressableProps['onPress']>;
+  sections: readonly LessonSection[];
+  title: string;
+  backAccessibilityLabel?: string;
+  eyebrow?: string;
+  introduction?: readonly string[];
+};
+
+export function LessonLayout({
+  onBack,
+  sections,
+  title,
+  backAccessibilityLabel = 'Go back to lessons',
+  eyebrow,
+  introduction,
+}: LessonLayoutProps) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={styles.safeAreaBackground}>
+      <ScrollView
+        alwaysBounceVertical={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom: Math.max(insets.bottom + spacing.xxl, spacing.xxxl),
+            paddingTop: Math.max(insets.top + spacing.md, spacing.xl),
+          },
+        ]}
+        scrollIndicatorInsets={{ bottom: insets.bottom, top: insets.top }}
+        style={styles.scrollView}
+      >
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Pressable
+              accessibilityLabel={backAccessibilityLabel}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={onBack}
+              style={({ pressed }) => [styles.backButton, pressed ? styles.backButtonPressed : null]}
+            >
+              <AppText style={styles.backButtonText}>‹</AppText>
+            </Pressable>
+
+            <View style={styles.titleGroup}>
+              {eyebrow ? <AppText variant="caption">{eyebrow}</AppText> : null}
+              <AppText variant="heading">{title}</AppText>
+              {introduction ? (
+                <View style={styles.paragraphGroup}>
+                  {introduction.map((paragraph) => (
+                    <AppText key={paragraph} variant="bodyLarge" style={styles.mutedText}>
+                      {paragraph}
+                    </AppText>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.sections}>
+            {sections.map((section) => (
+              <View key={section.id} style={styles.section}>
+                <AppText variant="sectionHeading" style={styles.sectionHeading}>
+                  {section.title}
+                </AppText>
+                <View style={styles.blocks}>{section.blocks.map(renderBlock)}</View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function renderBlock(block: LessonBlock) {
+  if (block.kind === 'activity') {
+    return (
+      <ActivityCard key={block.id} eyebrow={block.eyebrow} title={block.title}>
+        {block.children}
+      </ActivityCard>
+    );
+  }
+
+  return (
+    <View key={block.id} style={styles.paragraphGroup}>
+      {block.paragraphs.map((paragraph) => (
+        <AppText key={paragraph} variant="bodyLarge">
+          {paragraph}
+        </AppText>
+      ))}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeAreaBackground: {
+    backgroundColor: palette.background,
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+  },
+  content: {
+    alignSelf: 'center',
+    gap: spacing.xxl,
+    maxWidth: 720,
+    width: '100%',
+  },
+  header: {
+    gap: spacing.lg,
+  },
+  backButton: {
+    alignItems: 'center',
+    backgroundColor: palette.button,
+    borderRadius: radii.pill,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  backButtonPressed: {
+    backgroundColor: palette.buttonPressed,
+    transform: [{ scale: 0.96 }],
+  },
+  backButtonText: {
+    color: palette.buttonText,
+    fontSize: 34,
+    lineHeight: 38,
+    marginTop: -3,
+  },
+  titleGroup: {
+    gap: spacing.md,
+  },
+  mutedText: {
+    color: palette.mutedText,
+  },
+  sections: {
+    gap: spacing.xxxl,
+  },
+  section: {
+    gap: spacing.lg,
+  },
+  sectionHeading: {
+    fontSize: 24,
+    lineHeight: 34,
+  },
+  blocks: {
+    gap: spacing.xl,
+  },
+  paragraphGroup: {
+    gap: spacing.md,
+  },
+});
