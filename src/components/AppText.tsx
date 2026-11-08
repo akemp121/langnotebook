@@ -11,11 +11,12 @@ type AppTextProps = {
   variant?: AppTextVariant;
   style?: StyleProp<TextStyle>;
   numberOfLines?: number;
+  accessibilityLabel?: string;
 };
 
-export function AppText({ children, variant = 'body', style, numberOfLines }: AppTextProps) {
+export function AppText({ children, variant = 'body', style, numberOfLines, accessibilityLabel }: AppTextProps) {
   return (
-    <Text numberOfLines={numberOfLines} style={[styles[variant], style]}>
+    <Text accessibilityLabel={accessibilityLabel} numberOfLines={numberOfLines} style={[styles[variant], style]}>
       {children}
     </Text>
   );

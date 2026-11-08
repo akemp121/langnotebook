@@ -4,35 +4,63 @@ import { AppText } from '@/components/AppText';
 import { palette, radii, spacing } from '@/styles/theme';
 
 type AnswerChoice = {
-  readonly id: string;
+  readonly id: 'transitive' | 'intransitive';
   readonly label: string;
 };
 
-const answerChoices: readonly AnswerChoice[] = [
-  { id: 'transitive', label: 'Transitive' },
-  { id: 'intransitive', label: 'Intransitive' },
-] as const;
+type ClassificationPrompt = {
+  readonly questionNumber: number;
+  readonly totalQuestions: number;
+  readonly prompt: string;
+  readonly instruction: string;
+  readonly answers: readonly AnswerChoice[];
+};
+
+const previewPrompt: ClassificationPrompt = {
+  questionNumber: 1,
+  totalQuestions: 10,
+  prompt: 'The child reads a book.',
+  instruction: 'Classify whether the highlighted action points toward an object.',
+  answers: [
+    { id: 'transitive', label: 'Transitive' },
+    { id: 'intransitive', label: 'Intransitive' },
+  ],
+} as const;
 
 export function ClassificationPracticePreview() {
+  const counterLabel = `${previewPrompt.questionNumber}/${previewPrompt.totalQuestions}`;
+
   return (
     <View style={styles.container}>
-      <AppText variant="caption">Preview only</AppText>
+      <View style={styles.previewBanner}>
+        <AppText variant="caption" style={styles.previewEyebrow}>
+          Preview only
+        </AppText>
+        <AppText style={styles.previewNote}>
+          Static UI shell: question advancement, answer checking, scoring, and feedback are not implemented.
+        </AppText>
+      </View>
 
       <View style={styles.navigationRow}>
         <StaticArrowButton accessibilityLabel="Previous preview question" label="‹" />
-        <AppText style={styles.counterText}>1/10</AppText>
+        <AppText
+          accessibilityLabel={`Question ${previewPrompt.questionNumber} of ${previewPrompt.totalQuestions}`}
+          style={styles.counterText}
+        >
+          {counterLabel}
+        </AppText>
         <StaticArrowButton accessibilityLabel="Next preview question" label="›" />
       </View>
 
       <View style={styles.promptGroup}>
         <AppText variant="target" style={styles.promptText}>
-          to run
+          {previewPrompt.prompt}
         </AppText>
-        <AppText style={styles.promptHint}>Classify whether the sample verb needs an object.</AppText>
+        <AppText style={styles.promptHint}>{previewPrompt.instruction}</AppText>
       </View>
 
       <View style={styles.answerRow}>
-        {answerChoices.map((choice) => (
+        {previewPrompt.answers.map((choice) => (
           <StaticAnswerButton key={choice.id} label={choice.label} />
         ))}
       </View>
@@ -84,6 +112,20 @@ function StaticAnswerButton({ label }: StaticAnswerButtonProps) {
 const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
+  },
+  previewBanner: {
+    backgroundColor: palette.cardElevated,
+    borderColor: palette.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  previewEyebrow: {
+    color: palette.text,
+  },
+  previewNote: {
+    color: palette.mutedText,
   },
   navigationRow: {
     alignItems: 'center',
