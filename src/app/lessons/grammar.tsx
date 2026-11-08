@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 
 import { ClassificationPracticePreview } from '@/components/ClassificationPracticePreview';
+import { ConversationPracticePreview } from '@/components/ConversationPracticePreview';
 import { LessonLayout, type LessonSection } from '@/components/LessonLayout';
 
 const grammarPreviewSections: readonly LessonSection[] = [
@@ -37,6 +38,13 @@ const grammarPreviewSections: readonly LessonSection[] = [
           'This follow-on section represents the next part of the same scrolling lesson, not a separate route. It would connect the concept to the target language once curriculum content exists.',
           'A future version could compare two short sentence patterns and point out which verb form appears with an object.',
         ],
+      },
+      {
+        id: 'conversation-practice-preview',
+        kind: 'activity',
+        eyebrow: 'Static preview',
+        title: 'Practice a short conversation',
+        children: <ConversationPracticePreview />,
       },
     ],
   },
