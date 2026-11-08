@@ -1,31 +1,33 @@
 import { router } from 'expo-router';
-import { View } from 'react-native';
 
-import { AppText } from '@/components/AppText';
+import { AlphabetPreview } from '@/components/AlphabetPreview';
 import { LessonLayout, type LessonSection } from '@/components/LessonLayout';
 
 const alphabetPreviewSections: readonly LessonSection[] = [
   {
-    id: 'alphabet-shell',
-    title: 'Alphabet layout placeholder',
+    id: 'alphabet-overview',
+    title: 'Alphabet',
     blocks: [
       {
-        id: 'alphabet-shell-intro',
+        id: 'alphabet-intro',
         kind: 'text',
         paragraphs: [
-          'This placeholder reserves the notebook shell for the alphabet preview. It intentionally avoids teaching a real alphabet sequence until the preview activity is built.',
+          'Small description of the nature of this language’s alphabet. These cards are static preview content, so the audio controls are intentionally nonfunctional.',
         ],
       },
       {
-        id: 'alphabet-shell-card',
+        id: 'alphabet-letter-cards',
         kind: 'activity',
         eyebrow: 'Static preview',
-        title: 'Letter card area',
-        children: (
-          <View>
-            <AppText>Future alphabet cards will appear here with sample letters and nonfunctional audio controls.</AppText>
-          </View>
-        ),
+        title: 'Letter sounds',
+        children: <AlphabetPreview />,
+      },
+      {
+        id: 'alphabet-reflection',
+        kind: 'text',
+        paragraphs: [
+          'Later lessons can expand this pattern with more letters, real pronunciation audio, and short listening checks while keeping the same notebook flow.',
+        ],
       },
     ],
   },
@@ -37,11 +39,11 @@ export default function AlphabetPreviewRoute() {
       backAccessibilityLabel="Return to lesson previews"
       eyebrow="Alphabet preview"
       introduction={[
-        'A minimal entry point for the alphabet notebook layout. Content is static and limited to shell structure.',
+        'A notebook-style preview of letter cards, pronunciation hints, and example-word audio buttons using sample text only.',
       ]}
       onBack={() => router.replace('/')}
       sections={alphabetPreviewSections}
-      title="Alphabet notebook shell"
+      title="Alphabet"
     />
   );
 }
