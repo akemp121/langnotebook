@@ -91,14 +91,15 @@ const styles = StyleSheet.create({
   letterHeader: {
     alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   speakerButton: {
     alignItems: 'center',
     borderRadius: radii.pill,
-    height: 36,
+    height: 44,
     justifyContent: 'center',
-    width: 36,
+    width: 44,
   },
   speakerButtonText: {
     fontSize: 22,
@@ -113,6 +114,7 @@ const styles = StyleSheet.create({
     color: palette.text,
     flex: 1,
     flexShrink: 1,
+    minWidth: 140,
     textAlign: 'right',
   },
   exampleRow: {
@@ -124,7 +126,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.button,
     borderRadius: radii.sm,
-    minHeight: 40,
+    minHeight: 44,
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,

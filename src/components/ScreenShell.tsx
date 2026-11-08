@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { palette, spacing } from '@/styles/theme';
@@ -9,9 +9,22 @@ type ScreenShellProps = {
 };
 
 export function ScreenShell({ children }: ScreenShellProps) {
+  const { width } = useWindowDimensions();
+  const horizontalPadding = width < 380 ? spacing.md : width >= 768 ? spacing.xl : spacing.lg;
+  const verticalPadding = width < 380 ? spacing.lg : spacing.xl;
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        alwaysBounceVertical={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingVertical: verticalPadding,
+          },
+        ]}
+      >
         <View style={styles.content}>{children}</View>
       </ScrollView>
     </SafeAreaView>
@@ -25,8 +38,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
   },
   content: {
     alignSelf: 'center',

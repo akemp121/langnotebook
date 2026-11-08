@@ -130,14 +130,15 @@ const styles = StyleSheet.create({
   navigationRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: spacing.md,
     justifyContent: 'space-between',
   },
   arrowButton: {
     alignItems: 'center',
     borderRadius: radii.pill,
-    height: 44,
+    height: 48,
     justifyContent: 'center',
-    width: 44,
+    width: 48,
   },
   arrowText: {
     color: palette.text,
@@ -146,8 +147,10 @@ const styles = StyleSheet.create({
   },
   counterText: {
     color: palette.text,
+    flexShrink: 0,
     fontSize: 18,
     lineHeight: 24,
+    textAlign: 'center',
   },
   promptGroup: {
     alignItems: 'center',

@@ -1,6 +1,6 @@
 import { Link } from 'expo-router';
 import { forwardRef, type ComponentRef } from 'react';
-import { Pressable, StyleSheet, View, type PressableProps } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View, type PressableProps } from 'react-native';
 
 import { AppText } from '@/components/AppText';
 import { ScreenShell } from '@/components/ScreenShell';
@@ -52,6 +52,9 @@ const PreviewCardPressable = forwardRef<ComponentRef<typeof Pressable>, Pressabl
 });
 
 function LessonPreviewCard({ preview }: LessonPreviewCardProps) {
+  const { width } = useWindowDimensions();
+  const isCompact = width < 380;
+
   return (
     <Link href={preview.href} asChild>
       <PreviewCardPressable
@@ -59,7 +62,7 @@ function LessonPreviewCard({ preview }: LessonPreviewCardProps) {
         accessibilityLabel={preview.title}
         accessibilityRole="link"
       >
-        <View style={styles.cardHeader}>
+        <View style={[styles.cardHeader, isCompact ? styles.cardHeaderCompact : null]}>
           <View style={styles.titleGroup}>
             <AppText variant="caption">{preview.eyebrow}</AppText>
             <AppText variant="sectionHeading">{preview.title}</AppText>
@@ -115,16 +118,22 @@ const styles = StyleSheet.create({
   cardHeader: {
     alignItems: 'flex-start',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.md,
     justifyContent: 'space-between',
+  },
+  cardHeaderCompact: {
+    flexDirection: 'column',
   },
   titleGroup: {
     flex: 1,
     gap: spacing.sm,
   },
   statusPill: {
+    alignSelf: 'flex-start',
     backgroundColor: palette.button,
     borderRadius: radii.pill,
+    maxWidth: '100%',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
@@ -147,6 +156,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.button,
     borderRadius: radii.md,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     minHeight: 48,
     paddingHorizontal: spacing.lg,

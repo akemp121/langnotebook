@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { PressableProps } from 'react-native';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { palette, radii, spacing } from '@/styles/theme';
@@ -48,6 +48,9 @@ export function LessonLayout({
   introduction,
 }: LessonLayoutProps) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isCompact = width < 380;
+  const horizontalPadding = isCompact ? spacing.md : width >= 768 ? spacing.xxl : spacing.lg;
 
   return (
     <View style={styles.safeAreaBackground}>
@@ -57,14 +60,15 @@ export function LessonLayout({
           styles.scrollContent,
           {
             paddingBottom: Math.max(insets.bottom + spacing.xxl, spacing.xxxl),
-            paddingTop: Math.max(insets.top + spacing.md, spacing.xl),
+            paddingHorizontal: horizontalPadding,
+            paddingTop: Math.max(insets.top + (isCompact ? spacing.sm : spacing.md), isCompact ? spacing.lg : spacing.xl),
           },
         ]}
         scrollIndicatorInsets={{ bottom: insets.bottom, top: insets.top }}
         style={styles.scrollView}
       >
-        <View style={styles.content}>
-          <View style={styles.header}>
+        <View style={[styles.content, isCompact ? styles.contentCompact : null]}>
+          <View style={[styles.header, isCompact ? styles.headerCompact : null]}>
             <Pressable
               accessibilityLabel={backAccessibilityLabel}
               accessibilityRole="button"
@@ -93,7 +97,7 @@ export function LessonLayout({
           <View style={styles.sections}>
             {sections.map((section) => (
               <View key={section.id} style={styles.section}>
-                <AppText variant="sectionHeading" style={styles.sectionHeading}>
+                <AppText variant="sectionHeading" style={[styles.sectionHeading, isCompact ? styles.sectionHeadingCompact : null]}>
                   {section.title}
                 </AppText>
                 <View style={styles.blocks}>{section.blocks.map(renderBlock)}</View>
@@ -136,16 +140,21 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: spacing.lg,
   },
   content: {
     alignSelf: 'center',
     gap: spacing.xxl,
-    maxWidth: 720,
+    maxWidth: 760,
     width: '100%',
+  },
+  contentCompact: {
+    gap: spacing.xl,
   },
   header: {
     gap: spacing.lg,
+  },
+  headerCompact: {
+    gap: spacing.md,
   },
   backButton: {
     alignItems: 'center',
@@ -179,7 +188,11 @@ const styles = StyleSheet.create({
   },
   sectionHeading: {
     fontSize: 24,
-    lineHeight: 34,
+    lineHeight: 35,
+  },
+  sectionHeadingCompact: {
+    fontSize: 21,
+    lineHeight: 31,
   },
   blocks: {
     gap: spacing.xl,

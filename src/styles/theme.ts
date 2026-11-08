@@ -1,8 +1,8 @@
 export const palette = {
   background: '#FFFFFF',
   text: '#303030',
-  mutedText: '#6C6C6C',
-  subtleText: '#8A8A8A',
+  mutedText: '#5F5F5F',
+  subtleText: '#666666',
   card: '#F3F3F3',
   cardElevated: '#FAFAFA',
   border: '#E5E5E5',
