@@ -20,7 +20,7 @@ Before touching Expo, Router, or React Native APIs, follow `AGENTS.md`: check th
 
 - [x] **3. Move alphabet content out of its route.** Place its lesson definition and activity composition in a module outside `src/app/`. Leave navigation in the route. **Done when:** the original alphabet URL renders the same copy, cards, and layout from the extracted definition.
 
-- [ ] **4. Move grammar content out of its route.** Extract the grammar lesson definition and JSX composition without changing its sections. **Done when:** the original grammar URL still displays all text and activities in the same continuous scroll.
+- [x] **4. Move grammar content out of its route.** Extract the grammar lesson definition and JSX composition without changing its sections. **Done when:** the original grammar URL still displays all text and activities in the same continuous scroll. **Implemented:** `src/lessons/grammar.tsx` owns the typed lesson and activity JSX; `/lessons/grammar` retains the same layout and back-navigation hook. Exact section-content comparison, lint, and typecheck pass; device/browser walkthrough not performed.
 
 - [ ] **5. Add a small bundled curriculum catalog.** Register the preview lessons with ordered curriculum metadata and lookup helpers. Reject duplicate identities and missing lesson references with useful errors. **Done when:** both lessons resolve by curriculum/lesson ID, unknown IDs return a controlled missing result, and ordering is explicit. Document ID uniqueness scopes.
 
