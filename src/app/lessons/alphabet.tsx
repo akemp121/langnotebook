@@ -1,6 +1,7 @@
 import { AlphabetPreview } from '@/components/AlphabetPreview';
-import { LessonLayout, type LessonSection } from '@/components/LessonLayout';
+import { LessonLayout } from '@/components/LessonLayout';
 import { useLessonBackNavigation } from '@/hooks/useLessonBackNavigation';
+import type { LessonSection } from '@/types/curriculum';
 
 const alphabetPreviewSections: readonly LessonSection[] = [
   {

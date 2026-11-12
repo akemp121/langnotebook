@@ -1,42 +1,16 @@
-import type { ReactNode } from 'react';
 import type { PressableProps } from 'react-native';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { palette, radii, spacing } from '@/styles/theme';
+import type { Lesson, LessonBlock } from '@/types/curriculum';
 
 import { ActivityCard } from './ActivityCard';
 import { AppText } from './AppText';
 
-export type LessonTextBlock = {
-  id: string;
-  kind: 'text';
-  paragraphs: readonly string[];
-};
-
-export type LessonActivityBlock = {
-  id: string;
-  kind: 'activity';
-  children: ReactNode;
-  eyebrow?: string;
-  title?: string;
-};
-
-export type LessonBlock = LessonTextBlock | LessonActivityBlock;
-
-export type LessonSection = {
-  id: string;
-  blocks: readonly LessonBlock[];
-  title: string;
-};
-
-type LessonLayoutProps = {
+type LessonLayoutProps = Pick<Lesson, 'sections' | 'title' | 'eyebrow' | 'introduction'> & {
   onBack: NonNullable<PressableProps['onPress']>;
-  sections: readonly LessonSection[];
-  title: string;
   backAccessibilityLabel?: string;
-  eyebrow?: string;
-  introduction?: readonly string[];
 };
 
 export function LessonLayout({
