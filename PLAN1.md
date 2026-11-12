@@ -18,7 +18,7 @@ Before touching Expo, Router, or React Native APIs, follow `AGENTS.md`: check th
 
 - [x] **2. Extract minimal curriculum and lesson types.** Move lesson/section/block types out of `LessonLayout.tsx`. Add curriculum identity, instruction/target language tags, optional script/dialect metadata, and ordered lesson IDs. Keep plain paragraphs and arbitrary `ReactNode` activity contents. **Done when:** the existing layout compiles unchanged against the extracted types; IDs are explicit rather than derived from titles or positions.
 
-- [ ] **3. Move alphabet content out of its route.** Place its lesson definition and activity composition in a module outside `src/app/`. Leave navigation in the route. **Done when:** the original alphabet URL renders the same copy, cards, and layout from the extracted definition.
+- [x] **3. Move alphabet content out of its route.** Place its lesson definition and activity composition in a module outside `src/app/`. Leave navigation in the route. **Done when:** the original alphabet URL renders the same copy, cards, and layout from the extracted definition.
 
 - [ ] **4. Move grammar content out of its route.** Extract the grammar lesson definition and JSX composition without changing its sections. **Done when:** the original grammar URL still displays all text and activities in the same continuous scroll.
 
