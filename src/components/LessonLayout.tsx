@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { PressableProps } from 'react-native';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -86,6 +87,10 @@ export function LessonLayout({
 
 function renderBlock(block: LessonBlock) {
   if (block.kind === 'activity') {
+    if (block.withCard === false) {
+      return <Fragment key={block.id}>{block.children}</Fragment>;
+    }
+
     return (
       <ActivityCard key={block.id} eyebrow={block.eyebrow} title={block.title}>
         {block.children}

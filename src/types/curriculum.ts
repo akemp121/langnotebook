@@ -31,6 +31,9 @@ export type LessonActivityBlock = {
   id: string;
   kind: 'activity';
   children: ReactNode;
+  /** Defaults to true. Set false to let children own all framing, including headings. */
+  withCard?: boolean;
+  /** Card heading metadata; only displayed when withCard is not false. */
   eyebrow?: string;
   title?: string;
 };
