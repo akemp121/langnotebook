@@ -1,15 +1,5 @@
-import { LessonLayout } from '@/components/LessonLayout';
-import { useLessonBackNavigation } from '@/hooks/useLessonBackNavigation';
-import { alphabetPreviewLesson } from '@/lessons/alphabet';
+import { LessonScreen } from '@/screens/LessonScreen';
 
 export default function AlphabetPreviewRoute() {
-  const returnToLessonList = useLessonBackNavigation();
-
-  return (
-    <LessonLayout
-      {...alphabetPreviewLesson}
-      backAccessibilityLabel="Return to lesson previews"
-      onBack={returnToLessonList}
-    />
-  );
+  return <LessonScreen curriculumId="notebook-preview" lessonId="alphabet" />;
 }

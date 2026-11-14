@@ -24,7 +24,7 @@ Before touching Expo, Router, or React Native APIs, follow `AGENTS.md`: check th
 
 - [x] **5. Add a small bundled curriculum catalog.** Register the preview lessons with ordered curriculum metadata and lookup helpers. Reject duplicate identities and missing lesson references with useful errors. **Done when:** both lessons resolve by curriculum/lesson ID, unknown IDs return a controlled missing result, and ordering is explicit. Document ID uniqueness scopes.
 
-- [ ] **6. Create a shared lesson screen.** Centralize catalog lookup, LessonLayout props, and existing back-navigation handling outside src/app/. Make both original routes thin wrappers. **Done when:** both previews use the same screen implementation and an unknown lesson shows a readable fallback with a return action.
+- [x] **6. Create a shared lesson screen.** Centralize catalog lookup, LessonLayout props, and existing back-navigation handling outside src/app/. Make both original routes thin wrappers. **Done when:** both previews use the same screen implementation and an unknown lesson shows a readable fallback with a return action.
 
 - [ ] **7. Add one parameterized lesson route.** Use Expo Router parameters to open any catalog lesson through the shared screen. Retain both original preview URLs. **Done when:** adding another lesson needs no new route file, malformed/missing IDs do not crash, and direct entry/back navigation still work.
 

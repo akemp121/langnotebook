@@ -1,15 +1,5 @@
-import { LessonLayout } from '@/components/LessonLayout';
-import { useLessonBackNavigation } from '@/hooks/useLessonBackNavigation';
-import { grammarPreviewLesson } from '@/lessons/grammar';
+import { LessonScreen } from '@/screens/LessonScreen';
 
 export default function GrammarPreviewRoute() {
-  const returnToLessonList = useLessonBackNavigation();
-
-  return (
-    <LessonLayout
-      {...grammarPreviewLesson}
-      backAccessibilityLabel="Return to lesson previews"
-      onBack={returnToLessonList}
-    />
-  );
+  return <LessonScreen curriculumId="notebook-preview" lessonId="grammar" />;
 }
