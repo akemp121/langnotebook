@@ -67,7 +67,28 @@ export const grammarPreviewLesson: Lesson = {
           kind: 'activity',
           eyebrow: 'Static preview',
           title: 'Practice a short conversation',
-          children: <ConversationPracticePreview />,
+          children: (
+            <ConversationPracticePreview
+              questionNumber={1}
+              totalQuestions={8}
+              instruction="Listen to the situation, then practice answering out loud in the target language."
+              languageContext={{ targetLanguage: 'Spanish', translationLanguage: 'English' }}
+              turns={[
+                {
+                  id: 'tutor-destination-question',
+                  speaker: 'Tutor',
+                  targetText: '¿Adónde vas?',
+                  translation: 'Where are you going?',
+                },
+                {
+                  id: 'learner-market-answer',
+                  speaker: 'Learner',
+                  targetText: 'Voy al mercado.',
+                  translation: 'I am going to the market.',
+                },
+              ]}
+            />
+          ),
         },
       ],
     },

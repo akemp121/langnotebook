@@ -3,39 +3,34 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { palette, radii, spacing } from '@/styles/theme';
 
-type ConversationTurn = {
+export type ConversationTurn = {
+  /** Stable ID, unique within this conversation; independent of speaker and order. */
+  readonly id: string;
   readonly speaker: string;
   readonly targetText: string;
   readonly translation: string;
 };
 
-type ConversationPracticePrompt = {
+export type ConversationPracticePreviewProps = {
   readonly questionNumber: number;
   readonly totalQuestions: number;
   readonly instruction: string;
+  /** Human-readable language names used to label dialogue for screen readers. */
+  readonly languageContext: {
+    readonly targetLanguage: string;
+    readonly translationLanguage: string;
+  };
   readonly turns: readonly ConversationTurn[];
 };
 
-const previewPrompt: ConversationPracticePrompt = {
-  questionNumber: 1,
-  totalQuestions: 8,
-  instruction: 'Listen to the situation, then practice answering out loud in the target language.',
-  turns: [
-    {
-      speaker: 'Tutor',
-      targetText: '¿Adónde vas?',
-      translation: 'Where are you going?',
-    },
-    {
-      speaker: 'Learner',
-      targetText: 'Voy al mercado.',
-      translation: 'I am going to the market.',
-    },
-  ],
-} as const;
-
-export function ConversationPracticePreview() {
-  const counterLabel = `${previewPrompt.questionNumber}/${previewPrompt.totalQuestions}`;
+export function ConversationPracticePreview({
+  questionNumber,
+  totalQuestions,
+  instruction,
+  languageContext,
+  turns,
+}: ConversationPracticePreviewProps) {
+  const counterLabel = `${questionNumber}/${totalQuestions}`;
 
   return (
     <View style={styles.container}>
@@ -51,7 +46,7 @@ export function ConversationPracticePreview() {
       <View style={styles.navigationRow}>
         <StaticArrowButton accessibilityLabel="Previous conversation prompt" label="‹" />
         <AppText
-          accessibilityLabel={`Question ${previewPrompt.questionNumber} of ${previewPrompt.totalQuestions}`}
+          accessibilityLabel={`Question ${questionNumber} of ${totalQuestions}`}
           style={styles.counterText}
         >
           {counterLabel}
@@ -59,18 +54,27 @@ export function ConversationPracticePreview() {
         <StaticArrowButton accessibilityLabel="Next conversation prompt" label="›" />
       </View>
 
-      <AppText style={styles.instructionText}>{previewPrompt.instruction}</AppText>
+      <AppText style={styles.instructionText}>{instruction}</AppText>
 
       <View style={styles.dialogueCard}>
-        {previewPrompt.turns.map((turn) => (
-          <View key={turn.speaker} style={styles.dialogueTurn}>
+        {turns.map((turn) => (
+          <View key={turn.id} style={styles.dialogueTurn}>
             <AppText variant="caption" style={styles.speakerLabel}>
               {turn.speaker}
             </AppText>
-            <AppText variant="target" style={styles.targetText}>
+            <AppText
+              accessibilityLabel={`${languageContext.targetLanguage}: ${turn.targetText}`}
+              variant="target"
+              style={styles.targetText}
+            >
               {turn.targetText}
             </AppText>
-            <AppText style={styles.translationText}>{turn.translation}</AppText>
+            <AppText
+              accessibilityLabel={`${languageContext.translationLanguage}: ${turn.translation}`}
+              style={styles.translationText}
+            >
+              {turn.translation}
+            </AppText>
           </View>
         ))}
       </View>
