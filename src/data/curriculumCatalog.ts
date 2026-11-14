@@ -1,3 +1,4 @@
+import { syntheticToneRegistration } from '../fixtures/toneCurriculum';
 import { alphabetPreviewLesson } from '../lessons/alphabet';
 import { grammarPreviewLesson } from '../lessons/grammar';
 import type { Curriculum } from '../types/curriculum';
@@ -12,9 +13,16 @@ export const previewCurriculum: Curriculum = {
   lessonIds: ['alphabet', 'grammar'],
 };
 
+const previewRegistration = {
+  curriculum: previewCurriculum,
+  lessons: [alphabetPreviewLesson, grammarPreviewLesson],
+};
+
+/** Learner-facing list stays limited to the original shell previews. */
+export const lessonListCatalog = createCurriculumCatalog([previewRegistration]);
+
+/** Direct routes also resolve the explicitly labeled, route-only development fixture. */
 export const curriculumCatalog = createCurriculumCatalog([
-  {
-    curriculum: previewCurriculum,
-    lessons: [alphabetPreviewLesson, grammarPreviewLesson],
-  },
+  previewRegistration,
+  syntheticToneRegistration,
 ]);

@@ -2,7 +2,7 @@ import type { Href } from 'expo-router';
 
 import type { LessonListDisplay } from '../types/curriculum';
 import type { CurriculumCatalog } from './createCurriculumCatalog';
-import { curriculumCatalog } from './curriculumCatalog';
+import { lessonListCatalog } from './curriculumCatalog';
 
 export type LessonPreview = LessonListDisplay & {
   /** Composite identity: lesson IDs are only unique within a curriculum. */
@@ -28,4 +28,4 @@ export function getLessonPreviews(catalog: CurriculumCatalog): readonly LessonPr
   );
 }
 
-export const lessonPreviews = getLessonPreviews(curriculumCatalog);
+export const lessonPreviews = getLessonPreviews(lessonListCatalog);

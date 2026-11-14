@@ -33,7 +33,13 @@ test('the bundled catalog resolves both actual preview definitions in order', ()
     '@/components/ClassificationPracticePreview': { ClassificationPracticePreview: () => null },
     '@/components/ConversationPracticePreview': { ConversationPracticePreview: () => null },
   });
-  const { curriculumCatalog: catalog } = loadTypeScript('src/data/curriculumCatalog.ts', {
+  const fixtureModule = loadTypeScript('src/fixtures/toneCurriculum.tsx', {
+    '@/components/AlphabetPreview': { AlphabetPreview: () => null },
+    '@/components/ClassificationPracticePreview': { ClassificationPracticePreview: () => null },
+    './StaticToneGraphic': { StaticToneGraphic: () => null },
+  });
+  const { curriculumCatalog: catalog, lessonListCatalog } = loadTypeScript('src/data/curriculumCatalog.ts', {
+    '../fixtures/toneCurriculum': fixtureModule,
     '../lessons/alphabet': alphabetModule,
     '../lessons/grammar': grammarModule,
     './createCurriculumCatalog': builder,
@@ -45,7 +51,7 @@ test('the bundled catalog resolves both actual preview definitions in order', ()
   assert.equal(catalog.getLesson('unknown', 'alphabet'), undefined);
 
   const { lessonPreviews } = loadTypeScript('src/data/lessonPreviews.ts', {
-    './curriculumCatalog': { curriculumCatalog: catalog },
+    './curriculumCatalog': { lessonListCatalog },
   });
   assert.equal(lessonPreviews.length, 2);
   assert.deepEqual(lessonPreviews.map(({ id, href, ...copy }) => copy), [
@@ -73,7 +79,7 @@ const register = (metadata = curriculum, lessons = [alphabet, grammar]) => ({
 });
 
 const { getLessonPreviews } = loadTypeScript('src/data/lessonPreviews.ts', {
-  './curriculumCatalog': { curriculumCatalog: createCurriculumCatalog([]) },
+  './curriculumCatalog': { lessonListCatalog: createCurriculumCatalog([]) },
 });
 
 test('new catalog lessons automatically receive ordered cards and parameterized links', () => {
