@@ -1,14 +1,28 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/AppText';
-import type { AlphabetExampleWord, AlphabetLetterPreview } from '@/data/alphabetPreview';
-import { alphabetLetterPreviews } from '@/data/alphabetPreview';
 import { palette, radii, spacing } from '@/styles/theme';
 
-export function AlphabetPreview() {
+export type AlphabetExampleWord = {
+  readonly id: string;
+  readonly label: string;
+};
+
+export type AlphabetLetterPreview = {
+  readonly id: string;
+  readonly letter: string;
+  readonly pronunciationHint: string;
+  readonly examples: readonly AlphabetExampleWord[];
+};
+
+export type AlphabetPreviewProps = {
+  readonly letters: readonly AlphabetLetterPreview[];
+};
+
+export function AlphabetPreview({ letters }: AlphabetPreviewProps) {
   return (
     <View style={styles.container}>
-      {alphabetLetterPreviews.map((letterPreview) => (
+      {letters.map((letterPreview) => (
         <LetterCard key={letterPreview.id} letterPreview={letterPreview} />
       ))}
     </View>

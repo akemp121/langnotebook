@@ -1,5 +1,28 @@
-import { AlphabetPreview } from '@/components/AlphabetPreview';
+import { AlphabetPreview, type AlphabetLetterPreview } from '@/components/AlphabetPreview';
 import type { Lesson } from '@/types/curriculum';
+
+const alphabetLetterPreviews: readonly AlphabetLetterPreview[] = [
+  {
+    id: 'a-open-vowel',
+    letter: 'a',
+    pronunciationHint: 'like “o” in “spot”',
+    examples: [
+      { id: 'espalda', label: 'espalda' },
+      { id: 'apoyar', label: 'apoyar' },
+      { id: 'jalar', label: 'jalar' },
+    ],
+  },
+  {
+    id: 'b-plain-consonant',
+    letter: 'b',
+    pronunciationHint: 'same as in English',
+    examples: [
+      { id: 'borrar', label: 'borrar' },
+      { id: 'probar', label: 'probar' },
+      { id: 'basado', label: 'basado' },
+    ],
+  },
+] as const;
 
 export const alphabetPreviewLesson: Lesson = {
   id: 'alphabet',
@@ -32,7 +55,7 @@ export const alphabetPreviewLesson: Lesson = {
           kind: 'activity',
           eyebrow: 'Static preview',
           title: 'Letter sounds',
-          children: <AlphabetPreview />,
+          children: <AlphabetPreview letters={alphabetLetterPreviews} />,
         },
         {
           id: 'alphabet-reflection',
