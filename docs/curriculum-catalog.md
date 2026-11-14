@@ -1,5 +1,8 @@
 # Bundled curriculum catalog
 
+For a copyable lesson example, activity props, custom components, and font limits,
+start with the [lesson authoring guide](lesson-authoring.md).
+
 `src/data/curriculumCatalog.ts` registers the existing TSX lesson definitions from
 `src/lessons/`. The `notebook-preview` curriculum has English instruction (`en`)
 and Spanish target (`es`) metadata, with Latin script (`Latn`). It is a UI-shell
@@ -23,7 +26,9 @@ for a known, empty curriculum, distinguishing it from an unknown curriculum.
 Curricula follow registration-array order. Lessons follow the explicit
 `Curriculum.lessonIds` array, **not** lesson registration order, title sorting, or
 object-key iteration. The main list derives its entries from this order through
-`getLessonPreviews` in `src/data/lessonPreviews.ts`. Each link uses the shared
+`getLessonPreviews` in `src/data/lessonPreviews.ts`, using `lessonListCatalog`.
+Route lookup uses `curriculumCatalog`, which also includes the route-only synthetic
+tone fixture from `src/fixtures/toneCurriculum.tsx`. Each list link uses the shared
 `/lessons/[curriculumId]/[lessonId]` route; the original `/lessons/alphabet` and
 `/lessons/grammar` URLs remain available as aliases.
 
@@ -35,7 +40,10 @@ to be copied. Optional `Lesson.listDisplay` metadata customizes the card title,
 eyebrow, summary, layout note, and length label. Without it, the card uses the
 lesson title/introduction/section titles, curriculum title, and a `Preview only`
 label. The two bundled lessons own their original card copy in this metadata.
-Development-only fixtures should not be registered in the bundled main catalog.
+New learner-facing curriculum registrations belong in both `lessonListCatalog`
+and `curriculumCatalog`. Route-only development fixtures belong only in
+`curriculumCatalog`, not the home-list catalog; they are still bundled and are not
+restricted to development builds.
 
 ## Identity scopes
 
