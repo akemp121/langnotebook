@@ -81,11 +81,15 @@ for (const lessonId of ['alphabet', 'grammar']) {
   });
 }
 
-for (const [curriculumId, lessonId] of [['notebook-preview', 'unknown'], ['unknown', 'alphabet']]) {
+for (const [curriculumId, lessonId] of [
+  ['notebook-preview', 'unknown'], ['unknown', 'alphabet'],
+  [undefined, 'alphabet'], ['notebook-preview', undefined], [undefined, undefined],
+  ['', 'alphabet'], ['notebook-preview', ''],
+]) {
   test(`missing ${curriculumId}/${lessonId} has readable copy and a working return action`, () => {
     const harness = screenHarness(undefined);
     const element = harness.LessonScreen({ curriculumId, lessonId });
-    assert.deepEqual(harness.lookups, [[curriculumId, lessonId]]);
+    assert.deepEqual(harness.lookups, curriculumId && lessonId ? [[curriculumId, lessonId]] : []);
     assert.equal(harness.hookCalls, 1);
     assert.equal(element.type, ScreenShell);
     const [heading, explanation, button] = element.props.children;
@@ -98,3 +102,66 @@ for (const [curriculumId, lessonId] of [['notebook-preview', 'unknown'], ['unkno
     assert.equal(harness.returns, 1);
   });
 }
+
+for (const params of [
+  { curriculumId: 'notebook-preview', lessonId: 'alphabet' },
+  { curriculumId: 'notebook-preview', lessonId: 'grammar' },
+  { curriculumId: 'another-curriculum', lessonId: 'new-lesson' },
+  { curriculumId: 'unknown', lessonId: 'unknown' },
+  {},
+  { curriculumId: 'notebook-preview' },
+  { curriculumId: ['notebook-preview'], lessonId: ['alphabet', 'grammar'] },
+  { curriculumId: '', lessonId: '%bad/id' },
+]) {
+  test(`parameterized route safely forwards IDs: ${JSON.stringify(params)}`, () => {
+    const LessonScreen = () => null;
+    const route = loadTypeScript('src/app/lessons/[curriculumId]/[lessonId].tsx', {
+      'expo-router': { useLocalSearchParams: () => params },
+      '@/screens/LessonScreen': { LessonScreen },
+    });
+    const element = route.default();
+    assert.equal(element.type, LessonScreen);
+    assert.deepEqual(element.props, {
+      curriculumId: typeof params.curriculumId === 'string' ? params.curriculumId : undefined,
+      lessonId: typeof params.lessonId === 'string' ? params.lessonId : undefined,
+    });
+  });
+}
+
+test('shared back handler targets the list for direct entry and stacked navigation', () => {
+  // Expo Router dismissTo pops to an existing list or replaces a direct-entry screen.
+  const targets = [];
+  const { returnToLessonList } = loadTypeScript('src/hooks/useLessonBackNavigation.ts', {
+    'react-native': {},
+    'expo-router': { router: { dismissTo: (href) => targets.push(href) } },
+  });
+  returnToLessonList();
+  assert.deepEqual(targets, ['/']);
+});
+
+test('Android hardware back uses the shared return action and removes its listener', () => {
+  let listener;
+  let removed = false;
+  let cleanup;
+  const targets = [];
+  const { useLessonBackNavigation } = loadTypeScript('src/hooks/useLessonBackNavigation.ts', {
+    react: { useCallback: (callback) => callback },
+    'react-native': {
+      Platform: { OS: 'android' },
+      BackHandler: { addEventListener: (event, callback) => {
+        assert.equal(event, 'hardwareBackPress');
+        listener = callback;
+        return { remove: () => { removed = true; } };
+      } },
+    },
+    'expo-router': {
+      router: { dismissTo: (href) => targets.push(href) },
+      useFocusEffect: (effect) => { cleanup = effect(); },
+    },
+  });
+  useLessonBackNavigation();
+  assert.equal(listener(), true);
+  assert.deepEqual(targets, ['/']);
+  cleanup();
+  assert.equal(removed, true);
+});

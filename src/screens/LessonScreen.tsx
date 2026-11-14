@@ -6,13 +6,15 @@ import { curriculumCatalog } from '@/data/curriculumCatalog';
 import { useLessonBackNavigation } from '@/hooks/useLessonBackNavigation';
 
 type LessonScreenProps = {
-  curriculumId: string;
-  lessonId: string;
+  curriculumId: string | undefined;
+  lessonId: string | undefined;
 };
 
 export function LessonScreen({ curriculumId, lessonId }: LessonScreenProps) {
   const returnToLessonList = useLessonBackNavigation();
-  const lesson = curriculumCatalog.getLesson(curriculumId, lessonId);
+  const lesson = curriculumId && lessonId
+    ? curriculumCatalog.getLesson(curriculumId, lessonId)
+    : undefined;
 
   if (!lesson) {
     return (
