@@ -35,7 +35,18 @@ export const grammarPreviewLesson: Lesson = {
           kind: 'activity',
           eyebrow: 'Static preview',
           title: 'Practice classifying transitivity',
-          children: <ClassificationPracticePreview />,
+          children: (
+            <ClassificationPracticePreview
+              questionNumber={1}
+              totalQuestions={10}
+              prompt="The child reads a book."
+              instruction="Classify whether the highlighted action points toward an object."
+              choices={[
+                { id: 'transitive', label: 'Transitive' },
+                { id: 'intransitive', label: 'Intransitive' },
+              ]}
+            />
+          ),
         },
       ],
     },

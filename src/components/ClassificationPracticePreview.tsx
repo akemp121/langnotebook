@@ -3,32 +3,27 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { palette, radii, spacing } from '@/styles/theme';
 
-type AnswerChoice = {
-  readonly id: 'transitive' | 'intransitive';
+export type ClassificationChoice = {
+  readonly id: string;
   readonly label: string;
 };
 
-type ClassificationPrompt = {
+export type ClassificationPracticePreviewProps = {
   readonly questionNumber: number;
   readonly totalQuestions: number;
   readonly prompt: string;
   readonly instruction: string;
-  readonly answers: readonly AnswerChoice[];
+  readonly choices: readonly ClassificationChoice[];
 };
 
-const previewPrompt: ClassificationPrompt = {
-  questionNumber: 1,
-  totalQuestions: 10,
-  prompt: 'The child reads a book.',
-  instruction: 'Classify whether the highlighted action points toward an object.',
-  answers: [
-    { id: 'transitive', label: 'Transitive' },
-    { id: 'intransitive', label: 'Intransitive' },
-  ],
-} as const;
-
-export function ClassificationPracticePreview() {
-  const counterLabel = `${previewPrompt.questionNumber}/${previewPrompt.totalQuestions}`;
+export function ClassificationPracticePreview({
+  questionNumber,
+  totalQuestions,
+  prompt,
+  instruction,
+  choices,
+}: ClassificationPracticePreviewProps) {
+  const counterLabel = `${questionNumber}/${totalQuestions}`;
 
   return (
     <View style={styles.container}>
@@ -44,7 +39,7 @@ export function ClassificationPracticePreview() {
       <View style={styles.navigationRow}>
         <StaticArrowButton accessibilityLabel="Previous preview question" label="‹" />
         <AppText
-          accessibilityLabel={`Question ${previewPrompt.questionNumber} of ${previewPrompt.totalQuestions}`}
+          accessibilityLabel={`Question ${questionNumber} of ${totalQuestions}`}
           style={styles.counterText}
         >
           {counterLabel}
@@ -54,13 +49,13 @@ export function ClassificationPracticePreview() {
 
       <View style={styles.promptGroup}>
         <AppText variant="target" style={styles.promptText}>
-          {previewPrompt.prompt}
+          {prompt}
         </AppText>
-        <AppText style={styles.promptHint}>{previewPrompt.instruction}</AppText>
+        <AppText style={styles.promptHint}>{instruction}</AppText>
       </View>
 
       <View style={styles.answerRow}>
-        {previewPrompt.answers.map((choice) => (
+        {choices.map((choice) => (
           <StaticAnswerButton key={choice.id} label={choice.label} />
         ))}
       </View>
