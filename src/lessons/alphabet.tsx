@@ -4,6 +4,13 @@ import type { Lesson } from '@/types/curriculum';
 export const alphabetPreviewLesson: Lesson = {
   id: 'alphabet',
   title: 'Alphabet',
+  listDisplay: {
+    title: 'Alphabet preview',
+    eyebrow: 'Notebook shell',
+    summary: 'A static entry for the alphabet layout: letter cards, pronunciation hints, and audio controls later.',
+    layoutNote: 'Explainer text → letter activity card → short reflection text',
+    estimatedLength: 'Preview only',
+  },
   eyebrow: 'Alphabet preview',
   introduction: [
     'A notebook-style preview of letter cards, pronunciation hints, and example-word audio buttons using sample text only.',

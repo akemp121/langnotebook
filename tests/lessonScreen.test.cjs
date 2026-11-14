@@ -25,6 +25,41 @@ const DarkButton = () => null;
 const LessonLayout = () => null;
 const ScreenShell = () => null;
 
+test('the selection screen maps every display entry through the same linked card', () => {
+  const Link = () => null;
+  const View = () => null;
+  const entries = ['first', 'second', 'new-entry'].map((id) => ({
+    id, title: id, eyebrow: 'Preview', summary: 'Summary', layoutNote: 'Layout',
+    estimatedLength: 'Preview only',
+    href: { pathname: '/lessons/[curriculumId]/[lessonId]', params: { curriculumId: 'test', lessonId: id } },
+  }));
+  const route = loadTypeScript('src/app/index.tsx', {
+    'expo-router': { Link },
+    react: { forwardRef: (component) => component },
+    'react-native': {
+      Pressable: () => null, View, StyleSheet: { create: (styles) => styles },
+      useWindowDimensions: () => ({ width: 375 }),
+    },
+    '@/components/AppText': { AppText },
+    '@/components/ScreenShell': { ScreenShell },
+    '@/data/lessonPreviews': { lessonPreviews: entries },
+    '@/styles/theme': loadTypeScript('src/styles/theme.ts', {}),
+  });
+  const screen = route.default();
+  const cards = screen.props.children[1].props.children;
+  assert.equal(cards.length, 3);
+  assert.equal(new Set(cards.map((card) => card.type)).size, 1);
+  cards.forEach((card, index) => {
+    assert.equal(card.key, entries[index].id);
+    const link = card.type(card.props);
+    assert.equal(link.type, Link);
+    assert.equal(link.props.href, entries[index].href);
+    assert.equal(link.props.asChild, true);
+    assert.equal(link.props.children.props.accessibilityLabel, entries[index].title);
+    assert.equal(link.props.children.props.accessibilityRole, 'link');
+  });
+});
+
 function screenHarness(lesson) {
   const lookups = [];
   let hookCalls = 0;

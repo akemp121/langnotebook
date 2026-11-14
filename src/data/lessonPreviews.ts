@@ -1,34 +1,31 @@
 import type { Href } from 'expo-router';
 
-export type LessonPreviewId = 'alphabet' | 'grammar-notebook';
+import type { LessonListDisplay } from '../types/curriculum';
+import type { CurriculumCatalog } from './createCurriculumCatalog';
+import { curriculumCatalog } from './curriculumCatalog';
 
-export type LessonPreview = {
-  id: LessonPreviewId;
-  title: string;
-  eyebrow: string;
-  summary: string;
-  layoutNote: string;
-  estimatedLength: string;
+export type LessonPreview = LessonListDisplay & {
+  /** Composite identity: lesson IDs are only unique within a curriculum. */
+  id: string;
   href: Href;
 };
 
-export const lessonPreviews: readonly LessonPreview[] = [
-  {
-    id: 'alphabet',
-    title: 'Alphabet preview',
-    eyebrow: 'Notebook shell',
-    summary: 'A static entry for the alphabet layout: letter cards, pronunciation hints, and audio controls later.',
-    layoutNote: 'Explainer text → letter activity card → short reflection text',
-    estimatedLength: 'Preview only',
-    href: '/lessons/alphabet',
-  },
-  {
-    id: 'grammar-notebook',
-    title: 'Grammar notebook preview',
-    eyebrow: 'Notebook shell',
-    summary: 'A static entry for the grammar layout: concise explanations and practice cards in one scroll later.',
-    layoutNote: 'Concept text → classification practice card → follow-on sections',
-    estimatedLength: 'Preview only',
-    href: '/lessons/grammar',
-  },
-] as const;
+/** Follow catalog order and route every entry through the shared lesson screen. */
+export function getLessonPreviews(catalog: CurriculumCatalog): readonly LessonPreview[] {
+  return catalog.curricula.flatMap((curriculum) =>
+    (catalog.getLessons(curriculum.id) ?? []).map((lesson): LessonPreview => ({
+      id: JSON.stringify([curriculum.id, lesson.id]),
+      title: lesson.listDisplay?.title ?? lesson.title,
+      eyebrow: lesson.listDisplay?.eyebrow ?? curriculum.title,
+      summary: lesson.listDisplay?.summary ?? lesson.introduction?.join(' ') ?? '',
+      layoutNote: lesson.listDisplay?.layoutNote ?? lesson.sections.map((section) => section.title).join(' → '),
+      estimatedLength: lesson.listDisplay?.estimatedLength ?? 'Preview only',
+      href: {
+        pathname: '/lessons/[curriculumId]/[lessonId]',
+        params: { curriculumId: curriculum.id, lessonId: lesson.id },
+      },
+    })),
+  );
+}
+
+export const lessonPreviews = getLessonPreviews(curriculumCatalog);

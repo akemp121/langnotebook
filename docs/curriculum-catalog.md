@@ -22,8 +22,20 @@ for a known, empty curriculum, distinguishing it from an unknown curriculum.
 
 Curricula follow registration-array order. Lessons follow the explicit
 `Curriculum.lessonIds` array, **not** lesson registration order, title sorting, or
-object-key iteration. The catalog does not change the existing routes or list;
-those integrations are subsequent plan tasks.
+object-key iteration. The main list derives its entries from this order through
+`getLessonPreviews` in `src/data/lessonPreviews.ts`. Each link uses the shared
+`/lessons/[curriculumId]/[lessonId]` route; the original `/lessons/alphabet` and
+`/lessons/grammar` URLs remain available as aliases.
+
+## Adding a list entry
+
+Author a `Lesson` in `src/lessons/`, register it with its curriculum, and add its
+ID to that curriculum's `lessonIds`. No list-card component or route file needs
+to be copied. Optional `Lesson.listDisplay` metadata customizes the card title,
+eyebrow, summary, layout note, and length label. Without it, the card uses the
+lesson title/introduction/section titles, curriculum title, and a `Preview only`
+label. The two bundled lessons own their original card copy in this metadata.
+Development-only fixtures should not be registered in the bundled main catalog.
 
 ## Identity scopes
 
@@ -33,8 +45,9 @@ those integrations are subsequent plan tasks.
 - Section IDs are unique within their lesson; block IDs are unique within their
   section (existing lesson-authoring contracts, not catalog lookup keys).
 - IDs are explicit and stable, independent of titles and positions.
-- `lessonPreviews.ts` currently uses `grammar-notebook` as a legacy list-card ID.
-  The actual lesson ID is `grammar`; the two are not interchangeable.
+- List-card keys encode the curriculum/lesson ID pair, so the same lesson ID
+  in two curricula does not cause a React key collision. There is no separate
+  preview-ID enumeration.
 
 `createCurriculumCatalog` validates registration at construction and throws useful
 errors naming the offending IDs for duplicate curricula, duplicate lessons within
@@ -50,7 +63,7 @@ Run the catalog tests using Node's built-in test runner and the existing
 TypeScript compiler (no additional dependencies):
 
 ```sh
-node --test tests/curriculumCatalog.test.cjs
+node --test tests/*.test.cjs
 npm run lint
 npm run typecheck
 ```

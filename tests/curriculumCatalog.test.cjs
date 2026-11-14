@@ -43,6 +43,19 @@ test('the bundled catalog resolves both actual preview definitions in order', ()
   assert.deepEqual(catalog.getLessons('notebook-preview').map((lesson) => lesson.id), ['alphabet', 'grammar']);
   assert.equal(catalog.getLesson('notebook-preview', 'unknown'), undefined);
   assert.equal(catalog.getLesson('unknown', 'alphabet'), undefined);
+
+  const { lessonPreviews } = loadTypeScript('src/data/lessonPreviews.ts', {
+    './curriculumCatalog': { curriculumCatalog: catalog },
+  });
+  assert.equal(lessonPreviews.length, 2);
+  assert.deepEqual(lessonPreviews.map(({ id, href, ...copy }) => copy), [
+    alphabetModule.alphabetPreviewLesson.listDisplay,
+    grammarModule.grammarPreviewLesson.listDisplay,
+  ]);
+  assert.deepEqual(lessonPreviews.map((entry) => entry.href), ['alphabet', 'grammar'].map((lessonId) => ({
+    pathname: '/lessons/[curriculumId]/[lessonId]',
+    params: { curriculumId: 'notebook-preview', lessonId },
+  })));
 });
 
 const alphabet = { id: 'alphabet', title: 'Alphabet', sections: [] };
@@ -57,6 +70,50 @@ const curriculum = {
 const register = (metadata = curriculum, lessons = [alphabet, grammar]) => ({
   curriculum: metadata,
   lessons,
+});
+
+const { getLessonPreviews } = loadTypeScript('src/data/lessonPreviews.ts', {
+  './curriculumCatalog': { curriculumCatalog: createCurriculumCatalog([]) },
+});
+
+test('new catalog lessons automatically receive ordered cards and parameterized links', () => {
+  const newLesson = {
+    id: 'new-lesson', title: 'New lesson', introduction: ['First.', 'Second.'],
+    sections: [{ id: 'section', title: 'New section', blocks: [] }],
+  };
+  const catalog = createCurriculumCatalog([
+    register({ ...curriculum, lessonIds: ['grammar', 'new-lesson', 'alphabet'] },
+      [alphabet, newLesson, grammar]),
+    register({ ...curriculum, id: 'second', lessonIds: ['alphabet'] }, [alphabet]),
+  ]);
+  const entries = getLessonPreviews(catalog);
+  assert.deepEqual(entries.map((entry) => entry.title), ['Grammar', 'New lesson', 'Alphabet', 'Alphabet']);
+  assert.equal(new Set(entries.map((entry) => entry.id)).size, 4);
+  assert.deepEqual(entries[1], {
+    id: JSON.stringify(['preview', 'new-lesson']),
+    title: 'New lesson', eyebrow: 'Preview', summary: 'First. Second.',
+    layoutNote: 'New section', estimatedLength: 'Preview only',
+    href: {
+      pathname: '/lessons/[curriculumId]/[lessonId]',
+      params: { curriculumId: 'preview', lessonId: 'new-lesson' },
+    },
+  });
+  for (const entry of entries) {
+    const { curriculumId, lessonId } = entry.href.params;
+    assert.ok(catalog.getLesson(curriculumId, lessonId));
+  }
+});
+
+test('empty catalogs and empty curricula produce no cards; minimal lessons have safe copy', () => {
+  assert.deepEqual(getLessonPreviews(createCurriculumCatalog([])), []);
+  assert.deepEqual(getLessonPreviews(createCurriculumCatalog([
+    register({ ...curriculum, lessonIds: [] }, []),
+  ])), []);
+  const [entry] = getLessonPreviews(createCurriculumCatalog([
+    register({ ...curriculum, lessonIds: ['alphabet'] }, [alphabet]),
+  ]));
+  assert.equal(entry.summary, '');
+  assert.equal(entry.layoutNote, '');
 });
 
 test('lookup uses curriculum/lesson identity and explicit lessonIds order', () => {

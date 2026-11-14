@@ -44,10 +44,20 @@ export type LessonSection = {
   title: string;
 };
 
+/** Optional list-card copy; lessons without it use their title and introduction. */
+export type LessonListDisplay = {
+  title: string;
+  eyebrow: string;
+  summary: string;
+  layoutNote: string;
+  estimatedLength: string;
+};
+
 export type Lesson = {
   /** Stable, explicit ID, unique within its curriculum; independent of title/order. */
   id: string;
   title: string;
+  listDisplay?: LessonListDisplay;
   eyebrow?: string;
   introduction?: readonly string[];
   sections: readonly LessonSection[];

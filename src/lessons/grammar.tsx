@@ -5,6 +5,13 @@ import type { Lesson } from '@/types/curriculum';
 export const grammarPreviewLesson: Lesson = {
   id: 'grammar',
   title: 'Grammar notebook',
+  listDisplay: {
+    title: 'Grammar notebook preview',
+    eyebrow: 'Notebook shell',
+    summary: 'A static entry for the grammar layout: concise explanations and practice cards in one scroll later.',
+    layoutNote: 'Concept text → classification practice card → follow-on sections',
+    estimatedLength: 'Preview only',
+  },
   eyebrow: 'Grammar preview',
   introduction: [
     'A static notebook preview with placeholder grammar explanations, a nonfunctional classification card, and follow-on sections in one continuous scroll.',
