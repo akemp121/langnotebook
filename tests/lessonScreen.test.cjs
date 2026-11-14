@@ -174,6 +174,28 @@ test('shared back handler targets the list for direct entry and stacked navigati
   assert.deepEqual(targets, ['/']);
 });
 
+for (const platform of ['ios', 'web']) {
+  test(`${platform} does not install an Android hardware-back listener`, () => {
+    let calls = 0;
+    const targets = [];
+    const { useLessonBackNavigation } = loadTypeScript('src/hooks/useLessonBackNavigation.ts', {
+      react: { useCallback: (callback) => callback },
+      'react-native': {
+        Platform: { OS: platform },
+        BackHandler: { addEventListener: () => { calls += 1; } },
+      },
+      'expo-router': {
+        router: { dismissTo: (href) => targets.push(href) },
+        useFocusEffect: (effect) => { assert.equal(effect(), undefined); },
+      },
+    });
+    const onBack = useLessonBackNavigation();
+    assert.equal(calls, 0);
+    onBack();
+    assert.deepEqual(targets, ['/']);
+  });
+}
+
 test('Android hardware back uses the shared return action and removes its listener', () => {
   let listener;
   let removed = false;

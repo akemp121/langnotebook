@@ -110,6 +110,46 @@ test('the existing parameterized route and shared screen open the real fixture w
   }
 });
 
+for (const lessonId of ['alphabet', 'grammar']) {
+  test(`${lessonId} legacy and parameterized routes render identical real content in one scroll`, () => {
+    const savedParams = { ...params };
+    try {
+      Object.assign(params, { curriculumId: 'notebook-preview', lessonId });
+      const legacy = load(`src/app/lessons/${lessonId}`).default();
+      const parameterized = load('src/app/lessons/[curriculumId]/[lessonId]').default();
+      assert.equal(legacy.type, parameterized.type);
+      assert.deepEqual(legacy.props, parameterized.props);
+      const originalNodes = flatten(expand(legacy));
+      const parameterizedNodes = flatten(expand(parameterized));
+      const text = (nodes) => nodes.filter((node) => typeof node === 'string').join('\n');
+      assert.equal(text(originalNodes), text(parameterizedNodes));
+      assert.equal(originalNodes.filter((node) => node.type === 'ScrollView').length, 1);
+      const buttons = originalNodes.filter((node) => node.type === 'Pressable');
+      assert.equal(buttons.length, 9);
+      assert.equal(buttons[0].props.onPress, returnToList);
+      for (const button of buttons.slice(1)) {
+        assert.equal(button.props.disabled, true);
+        assert.equal(button.props.accessibilityState.disabled, true);
+        assert.equal(button.props.onPress, undefined);
+      }
+      const expected = lessonId === 'alphabet'
+        ? ['Letter sounds', 'espalda', 'apoyar', 'jalar', 'borrar', 'probar', 'basado', 'Later lessons can expand this pattern']
+        : ['Transitivity', 'Practice classifying transitivity', 'The child reads a book.',
+          'Applied to the target language', 'Practice a short conversation', '¿Adónde vas?',
+          'Voy al mercado.', 'Further along in the transitivity section...',
+          'Next section...', 'User continues scrolling'];
+      let position = -1;
+      for (const snippet of expected) {
+        const next = text(originalNodes).indexOf(snippet, position + 1);
+        assert.ok(next > position, `Missing or out-of-order baseline content: ${snippet}`);
+        position = next;
+      }
+    } finally {
+      Object.assign(params, savedParams);
+    }
+  });
+}
+
 test('the fixture supplies new props to existing previews and opts only the graphic out of its card', () => {
   const { AlphabetPreview } = load('src/components/AlphabetPreview');
   const { ClassificationPracticePreview } = load('src/components/ClassificationPracticePreview');

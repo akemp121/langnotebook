@@ -1,0 +1,85 @@
+{
+  "browser": "158.0.8127.18",
+  "routes": [
+    "/lessons/alphabet",
+    "/lessons/notebook-preview/alphabet",
+    "/lessons/grammar",
+    "/lessons/notebook-preview/grammar",
+    "/lessons/unknown/alphabet",
+    "/lessons/notebook-preview/unknown",
+    "/lessons/__proto__/constructor",
+    "/lessons/notebook-preview/%2F",
+    "/lessons/notebook-preview/%20",
+    "/lessons/notebook-preview (unmatched)",
+    "/lessons/synthetic-tone-lab/pitch-paths"
+  ],
+  "layouts": [
+    {
+      "label": "/lessons/alphabet",
+      "scrollers": 1,
+      "scrollHeight": 1274,
+      "overflow": []
+    },
+    {
+      "label": "/lessons/notebook-preview/alphabet",
+      "scrollers": 1,
+      "scrollHeight": 1274,
+      "overflow": []
+    },
+    {
+      "label": "alphabet compact 320",
+      "scrollers": 1,
+      "scrollHeight": 1383,
+      "overflow": []
+    },
+    {
+      "label": "alphabet compact 360",
+      "scrollers": 1,
+      "scrollHeight": 1226,
+      "overflow": []
+    },
+    {
+      "label": "alphabet 150% browser text approximation",
+      "scrollers": 1,
+      "scrollHeight": 1873,
+      "overflow": []
+    },
+    {
+      "label": "/lessons/grammar",
+      "scrollers": 1,
+      "scrollHeight": 3750,
+      "overflow": []
+    },
+    {
+      "label": "/lessons/notebook-preview/grammar",
+      "scrollers": 1,
+      "scrollHeight": 3750,
+      "overflow": []
+    },
+    {
+      "label": "grammar compact 320",
+      "scrollers": 1,
+      "scrollHeight": 4034,
+      "overflow": []
+    },
+    {
+      "label": "grammar compact 360",
+      "scrollers": 1,
+      "scrollHeight": 3714,
+      "overflow": []
+    },
+    {
+      "label": "grammar 150% browser text approximation",
+      "scrollers": 1,
+      "scrollHeight": 6338,
+      "overflow": []
+    },
+    {
+      "label": "synthetic composition",
+      "scrollers": 1,
+      "scrollHeight": 2456,
+      "overflow": []
+    }
+  ],
+  "errors": []
+}

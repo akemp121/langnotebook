@@ -42,13 +42,15 @@ Visual baseline: white notebook background, pale rounded bordered cards, charcoa
 
 ## Final walkthrough comparison checklist
 
-Leave these unchecked until the final refactor walkthrough; the observations above are the starting reference.
+Final step-15 results and reproducible evidence: [refactor verification](../verification/README.md).
+Checks below refer to mobile-web coverage, not native devices; the original baseline observations above are unchanged.
 
-- [ ] `/` retains the two cards in the same order, copy, preview labels, and working links.
-- [ ] Both original lesson URLs (including direct entry) retain titles, text, activity order, fixtures, and reflection/final sections shown above.
-- [ ] Compare all eight screenshot positions at 390 × 844: typography, card framing, wrapping, spacing, and circular back control remain consistent.
-- [ ] Scroll the entire grammar lesson without route changes, clipped controls, or missing final content; alphabet still ends with reflection.
-- [ ] All preview controls remain disabled (8 per lesson); counters and dialogue do not advance; microphone stays noninteractive.
-- [ ] Circular back from list entry and direct entry returns to `/` for both lessons; browser history back still works.
-- [ ] Check compact widths below 380 px and large system text separately; neither was covered by this baseline capture.
+- [x] `/` retains the two cards in the same order, copy, preview labels, and working links (now parameterized catalog URLs).
+- [x] Both original lesson URLs (including direct entry) retain titles, text, activity order, fixtures, and reflection/final sections shown above; parameterized equivalents match.
+- [x] Compared all eight screenshot positions at 390 × 844: typography, card framing, wrapping, spacing, and circular back control remain consistent.
+- [x] Grammar retains one continuous scroll without route changes or missing final content; alphabet still ends with reflection. No clipped preview controls observed at the checked viewports.
+- [x] All preview controls remain disabled (8 per lesson); counters and dialogue do not advance; microphone stays noninteractive.
+- [x] Circular back from home-list parameterized entry and from direct legacy/parameterized entry returns to `/` for both lessons; browser history back from both list links works.
+- [x] Compact 320/360 px widths and a separate 390 px browser-only 150% text stress approximation checked; see verification for limits.
+- [ ] Large **system** text on native devices, including compact + large text together, remains unavailable/unverified (browser approximation is not equivalent).
 - [ ] **Unavailable here:** Android hardware/gesture back, native cold-start/deep links, native scrolling/performance, iOS back behavior, device safe areas/status bars, native emoji rendering, VoiceOver/TalkBack, and OS font scaling. `adb devices` reported no attached device/emulator; no iOS simulator/Xcode was available. Validate on target devices later rather than treating browser emulation as native coverage.
