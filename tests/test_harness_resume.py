@@ -158,7 +158,7 @@ class ResumeTests(unittest.TestCase):
         complete["remaining_actions"] = []
         approval = {"verdict": "APPROVED", "summary": "Complete", "findings": [], "escalate": False}
         with tempfile.TemporaryDirectory() as parent, patch.object(h, "ROOT", self.root), \
-                patch.object(sys, "argv", ["run_harness.py", "--resume", "--log-dir", parent]), \
+                patch.object(sys, "argv", ["run_harness.py", "--resume", "--base-ref", "HEAD^", "--log-dir", parent]), \
                 patch.object(h.Runner, "agent", side_effect=[json.dumps(complete), json.dumps(approval)]) as agent, \
                 patch.object(h.Runner, "checks", return_value=""):
             self.assertEqual(h.main(), 0)

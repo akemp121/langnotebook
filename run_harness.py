@@ -13,6 +13,8 @@ import sys
 import tempfile
 import time
 
+from harness_state import StateError, TaskCheckpoint, digest
+
 ROOT = Path(__file__).resolve().parent
 TASK = re.compile(r"^- \[([ xX])\] \*\*(\d+)\. .*?(?=^- \[[ xX]\] |^## |\Z)", re.M | re.S)
 CHECKS = (["npm", "run", "lint"], ["npm", "run", "typecheck"])
@@ -222,12 +224,13 @@ class Runner:
         return "\n\n".join(failures)
 
 
-def capture_changes(runner, head, plan, allowed, recovery=False):
+def capture_changes(runner, head, plan, allowed, recovery=False, base=None):
     if runner.git("rev-parse", "HEAD").strip() != head:
         raise HarnessError("Agent changed HEAD; inspect repository manually.")
     if (runner.root / "PLAN1.md").read_text() != plan:
         raise HarnessError("Agent edited PLAN1.md; only the harness may mark completion.")
-    names = runner.git("diff", "--name-only", "-z", "--no-renames", "HEAD", "--").split("\0")
+    base = base or "HEAD"
+    names = runner.git("diff", "--name-only", "-z", "--no-renames", base, "--").split("\0")
     untracked = runner.git("ls-files", "--others", "--exclude-standard", "-z").split("\0")
     if recovery:
         names = [name for name in names if name != "PLAN1.md"]
@@ -237,7 +240,7 @@ def capture_changes(runner, head, plan, allowed, recovery=False):
         if not any(path == prefix.rstrip("/") or path.startswith(prefix.rstrip("/") + "/") for prefix in allowed):
             raise HarnessError(f"Out-of-scope change: {path}. Inspect manually; --allow-path can widen scope next run.")
     pathspec = [".", ":(exclude)PLAN1.md"] if recovery else []
-    diff = runner.git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", "HEAD", "--", *pathspec)
+    diff = runner.git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", base, "--", *pathspec)
     for path in filter(None, untracked):
         diff += runner.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--no-index", "--", os.devnull, path], allowed=(0, 1))
     if not paths:
@@ -442,7 +445,7 @@ def complete_plan(plan, task, evidence):
     return plan[:task.start()] + replacement + plan[task.end():]
 
 
-def execute(args, runner):
+def execute(args, runner, checkpoint=None):
     if not 0 <= args.max_repairs <= MAX_REPAIRS:
         raise HarnessError(f"max-repairs must be between 0 and {MAX_REPAIRS}.")
     status = runner.git("status", "--porcelain", "--untracked-files=all")
@@ -456,9 +459,18 @@ def execute(args, runner):
     assessment_result = None
     actions, verified = [], set()
     original_task = RECOVERY_BLOCK.sub("", task[0])
+    ready_for_review = False
+    if checkpoint:
+        fingerprint = digest("\n".join(line for line in RECOVERY_BLOCK.sub("", plan).splitlines() if line.strip()))
+        checkpoint.prepare(plan, int(task[2]), fingerprint, prior_task_logs(runner, int(task[2])))
+        ready_for_review = checkpoint.reusable and checkpoint.data["phase"] in ("coded", "checked", "reviewing")
     if recovery:
-        assessment_result = assess_resume(runner, plan, task, status, head)
+        cached = checkpoint.data.get("assessment") if checkpoint and checkpoint.reusable else None
+        assessment_result = ({"assessment": cached, "prior_run_logs": prior_task_logs(runner, int(task[2]))} if cached else
+                             assess_resume(runner, plan, task, status, head))
         actions = assessment_result["assessment"]["remaining_actions"]
+        if checkpoint:
+            checkpoint.save(checkpoint.data["phase"], assessment=assessment_result["assessment"])
 
     def persist_progress():
         nonlocal plan, task
@@ -488,6 +500,8 @@ def execute(args, runner):
     if baseline and not recovery:
         raise HarnessError("Baseline checks already fail; no agent was run.\n" + baseline)
     feedback = baseline if recovery else ""
+    if checkpoint and not feedback:
+        feedback = checkpoint.data.get("feedback", "") if not ready_for_review else ""
     for attempt in range(args.max_repairs + 1):
         phase = "initial implementation" if attempt == 0 else f"coder repair {attempt}/{args.max_repairs}"
         print(f"Step {task[2]}: {phase}", flush=True)
@@ -495,16 +509,24 @@ def execute(args, runner):
             verified.clear()
             persist_progress()
         skip_coder = (recovery and attempt == 0 and not feedback and
-                      not any(c["status"] == "missing" for c in assessment_result["assessment"]["criteria"]))
+                      (ready_for_review or not any(c["status"] == "missing" for c in assessment_result["assessment"]["criteria"])))
         if skip_coder:
             coder_report = "Coding skipped: assessment found no missing implementation; revalidate current work."
         else:
+            if checkpoint:
+                checkpoint.start_coder()
             coder_report = runner.agent(CODER_MODEL, CODER_THINKING,
                                         context + (f"\nRepair feedback:\n{feedback}" if feedback else ""))
+        if checkpoint:
+            checkpoint.save("coded", feedback="", coder_started=True)
         capture_options = {"recovery": True} if recovery else {}
+        if checkpoint:
+            capture_options["base"] = checkpoint.data["base"]
         _, diff = capture_changes(runner, head, plan, args.allow_path, **capture_options)
         (runner.artifacts / f"attempt-{attempt}.diff").write_text(diff)
         feedback = runner.checks()
+        if checkpoint:
+            checkpoint.save("checks_failed" if feedback else "checked", feedback=feedback)
         if not feedback:
             if recovery:
                 verified.add(len(actions))  # Checks freshly passed; action completion awaits independent approval.
@@ -518,6 +540,8 @@ def execute(args, runner):
                              '"findings":[{"file":"relative/path", "line":1, "message":"actionable issue"}], "escalate":false}. '
                              "Approval requires zero findings; revision requires at least one. "
                              "Set escalate=true if approval cannot be given confidently; no alternate reviewer is available.")
+            if checkpoint:
+                checkpoint.save("reviewing")
             review = review_changes(runner, review_prompt, diff)
             # Detect any reviewer-side changes, including changes outside the intended diff.
             _, after = capture_changes(runner, head, plan, args.allow_path, **capture_options)
@@ -530,11 +554,15 @@ def execute(args, runner):
                 evidence = (f"Harness: lint, typecheck, Node tests, and independent review passed; "
                             f"visual/native checks not verified. Run artifacts: `{runner.artifacts}`.")
                 plan_path.write_text(complete_plan(plan, task, evidence))
-                result = {"step": int(task[2]), "repairs": attempt, "review": review}
+                if checkpoint:
+                    checkpoint.save("approved", findings=review, feedback="")
+                result = {"step": int(task[2]), "repairs": checkpoint.data["repairs_used"] if checkpoint else attempt, "review": review}
                 if recovery:
                     result.update(assessment=assessment_result["assessment"], prior_run_logs=assessment_result["prior_run_logs"])
                 return result
             feedback = json.dumps(review, indent=2)
+            if checkpoint:
+                checkpoint.save("rejected", findings=review, feedback=feedback)
         (runner.artifacts / f"attempt-{attempt}.feedback.txt").write_text(feedback)
         if attempt == args.max_repairs:
             raise HarnessError(
@@ -550,6 +578,9 @@ def main():
     parser.add_argument("--step", type=int, help="Unfinished step number; default: first unchecked")
     parser.add_argument("--resume", action="store_true",
                         help="Assess partial work, persist a recovery sub-plan, and execute only remaining work")
+    parser.add_argument("--base-ref", help="Original pre-task commit for legacy recovery without a checkpoint")
+    parser.add_argument("--resume-path", action="append", default=[], help="Explicitly acknowledge an existing dirty task file (repeatable)")
+    parser.add_argument("--restart-repairs", action="store_true", help="Acknowledge manual inspection and explicitly restart the repair budget")
     parser.add_argument("--max-repairs", type=int, choices=range(MAX_REPAIRS + 1), default=MAX_REPAIRS,
                         help="Coder repairs after the initial attempt (default: 3; maximum: 3)")
     parser.add_argument("--timeout", type=int, default=900, help="Seconds per subprocess")
@@ -560,6 +591,8 @@ def main():
         parser.error("This harness requires Linux/macOS (POSIX repository locking).")
     if args.timeout < 1:
         parser.error("timeout must be positive")
+    if (args.base_ref or args.restart_repairs or args.resume_path) and not args.resume:
+        parser.error("base-ref, resume-path and restart-repairs require --resume")
     if any(Path(p).is_absolute() or ".." in Path(p).parts or p in ("", ".") for p in args.allow_path):
         parser.error("allow-path must be a relative file/directory, without '..'")
     parent = (args.log_dir or Path.home() / ".local/state/langnotebook-harness").resolve()
@@ -583,11 +616,11 @@ def main():
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
                 raise HarnessError("Another harness run holds the repository lock.") from exc
-            result = execute(args, runner)
+            result = execute(args, runner, TaskCheckpoint(runner, args))
             summary.update({"status": "approved"}, **result)
         print(f"Step {summary['step']} approved and checked off. Changes are NOT committed.")
         return 0
-    except (HarnessError, OSError, KeyboardInterrupt) as exc:
+    except (HarnessError, StateError, OSError, KeyboardInterrupt) as exc:
         summary["error"] = str(exc) or "Interrupted"
         print(f"Stopped: {summary['error']}\nChanges preserved; inspect them before retrying.", file=sys.stderr)
         return 1
