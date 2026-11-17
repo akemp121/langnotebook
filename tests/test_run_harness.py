@@ -76,6 +76,20 @@ class ParsingTests(unittest.TestCase):
                 h.parse_events(output)
 
 
+    def test_model_access_error_is_actionable(self):
+        message = {"role": "assistant", "provider": "openai", "model": "gpt-6-luna",
+                   "content": [], "stopReason": "error",
+                   "errorMessage": "OpenAI API error (403): Project does not have access to model gpt-6-luna"}
+        events = [{"type": "message_end", "message": message}, {"type": "agent_settled", "aborted": False}]
+        with self.assertRaises(h.HarnessError) as error:
+            h.parse_events("\n".join(map(json.dumps, events)))
+        text = str(error.exception)
+        self.assertIn("openai/gpt-6-luna", text)
+        self.assertIn("403", text)
+        self.assertIn("does not have access", text)
+        self.assertIn("pi --list-models is not proof of access", text)
+
+
 class ExecutionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -90,9 +104,7 @@ class ExecutionTests(unittest.TestCase):
         self.runner.git.side_effect = ["", "head"]
         self.runner.checks.return_value = ""
         self.runner.agent.side_effect = ["Coder report", json.dumps(APPROVAL)]
-        self.args = argparse.Namespace(step=None, allow_path=["src", "tests", "docs"], max_repairs=1,
-                                       coder_model="provider/strong", reviewer_model="provider/cheap",
-                                       coder_thinking="high", reviewer_thinking="low")
+        self.args = argparse.Namespace(step=None, allow_path=["src", "tests", "docs"], max_repairs=1)
         self.capture = patch.object(h, "capture_changes", return_value=(["src/preview.tsx"], "diff"))
         self.capture.start()
         self.addCleanup(self.capture.stop)
@@ -103,7 +115,9 @@ class ExecutionTests(unittest.TestCase):
     def test_success_only_completion(self):
         result = h.execute(self.args, self.runner)
         self.assertEqual(result["step"], 2)
-        self.assertEqual(self.runner.agent.call_args_list[1].args[0], "provider/cheap")
+        self.assertEqual(self.runner.agent.call_args_list[0].args[:2], ("openai/gpt-6.1-sol", "high"))
+        self.assertEqual(self.runner.agent.call_args_list[1].args[:2], ("openai/gpt-6-luna", "low"))
+        self.assertTrue(self.runner.agent.call_args_list[1].kwargs["reviewer"])
         self.assertIn("- [x] **2.", (self.root / "PLAN1.md").read_text())
 
     def test_dirty_tree(self):
@@ -126,17 +140,36 @@ class ExecutionTests(unittest.TestCase):
             h.execute(self.args, self.runner)
         self.assert_unchecked()
 
-    def test_rejection_repairs_and_escalates(self):
+    def test_rejection_repairs_with_fixed_models(self):
         self.runner.agent.side_effect = ["Coder", json.dumps(REVISION), "Repair", json.dumps(APPROVAL)]
         result = h.execute(self.args, self.runner)
         self.assertEqual(result["repairs"], 1)
-        self.assertEqual(self.runner.agent.call_args_list[-1].args[0], "provider/strong")
+        self.assertEqual([call.args[:2] for call in self.runner.agent.call_args_list], [
+            ("openai/gpt-6.1-sol", "high"), ("openai/gpt-6-luna", "low"),
+            ("openai/gpt-6.1-sol", "high"), ("openai/gpt-6-luna", "low")])
         self.assertEqual(self.runner.checks.call_count, 3)
 
-    def test_malformed_review_escalates(self):
-        self.runner.agent.side_effect = ["Coder", "bad", json.dumps(APPROVAL)]
-        h.execute(self.args, self.runner)
-        self.assertEqual(self.runner.agent.call_args_list[-1].args[0], "provider/strong")
+    def test_malformed_review_does_not_substitute_sol(self):
+        self.runner.agent.side_effect = ["Coder", "bad"]
+        with self.assertRaisesRegex(h.HarnessError, "valid JSON"):
+            h.execute(self.args, self.runner)
+        self.assertEqual(self.runner.agent.call_count, 2)
+        self.assert_unchecked()
+
+    def test_review_access_error_does_not_substitute_sol(self):
+        self.runner.agent.side_effect = ["Coder", h.HarnessError("OpenAI API error (403): model access denied")]
+        with self.assertRaisesRegex(h.HarnessError, "403"):
+            h.execute(self.args, self.runner)
+        self.assertEqual(self.runner.agent.call_count, 2)
+        self.assert_unchecked()
+
+    def test_requested_escalation_does_not_substitute_sol(self):
+        self.args.max_repairs = 0
+        self.runner.agent.side_effect = ["Coder", json.dumps({**APPROVAL, "escalate": True})]
+        with self.assertRaises(h.HarnessError):
+            h.execute(self.args, self.runner)
+        self.assertEqual(self.runner.agent.call_count, 2)
+        self.assert_unchecked()
 
     def test_repair_exhaustion(self):
         self.runner.agent.side_effect = ["Coder", json.dumps(REVISION), "Repair", json.dumps(REVISION)]
@@ -150,10 +183,10 @@ class ExecutionTests(unittest.TestCase):
                 h.execute(self.args, self.runner)
         self.assert_unchecked()
 
-    def test_high_risk_routes_use_stronger_reviewer(self):
+    def test_high_risk_routes_still_use_luna_low(self):
         with patch.object(h, "capture_changes", return_value=(["src/app/route.tsx"], "diff")):
             h.execute(self.args, self.runner)
-        self.assertEqual(self.runner.agent.call_args_list[-1].args[0], "provider/strong")
+        self.assertEqual(self.runner.agent.call_args_list[-1].args[:2], ("openai/gpt-6-luna", "low"))
 
     def test_check_failure_repaired_before_review(self):
         self.runner.checks.side_effect = ["", "TS failure", ""]
@@ -170,6 +203,22 @@ class SubprocessAndGitTests(unittest.TestCase):
         self.logs = self.root / "logs"
         self.logs.mkdir()
         self.runner = h.Runner(self.root, self.logs, 5)
+
+    def test_cli_needs_no_model_arguments_and_records_fixed_settings(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        with tempfile.TemporaryDirectory() as log_dir:
+            with patch.object(h, "ROOT", self.root), patch.object(sys, "argv", ["run_harness.py", "--log-dir", log_dir]), \
+                    patch.object(h, "execute", return_value={"step": 2}) as execute:
+                self.assertEqual(h.main(), 0)
+            self.assertFalse(hasattr(execute.call_args.args[0], "coder_model"))
+            summary = json.loads(next(Path(log_dir).glob("run-*/summary.json")).read_text())
+            self.assertEqual(summary["configuration"]["coder_model"], "openai/gpt-6.1-sol")
+            self.assertEqual(summary["configuration"]["coder_thinking"], "high")
+            self.assertEqual(summary["configuration"]["reviewer_model"], "openai/gpt-6-luna")
+            self.assertEqual(summary["configuration"]["reviewer_thinking"], "low")
+        help_text = subprocess.check_output([sys.executable, str(Path(h.__file__)), "--help"], text=True)
+        for flag in ("--coder-model", "--reviewer-model", "--coder-thinking", "--reviewer-thinking"):
+            self.assertNotIn(flag, help_text)
 
     def test_command_failure(self):
         with self.assertRaises(h.HarnessError):
