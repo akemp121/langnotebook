@@ -19,6 +19,7 @@ CODER_MODEL = "openai/gpt-6.1-sol"
 CODER_THINKING = "high"
 REVIEWER_MODEL = "openai/gpt-6-luna"
 REVIEWER_THINKING = "low"
+MAX_REPAIRS = 3
 
 
 class HarnessError(RuntimeError):
@@ -205,6 +206,8 @@ def complete_plan(plan, task, evidence):
 
 
 def execute(args, runner):
+    if not 0 <= args.max_repairs <= MAX_REPAIRS:
+        raise HarnessError(f"max-repairs must be between 0 and {MAX_REPAIRS}.")
     if runner.git("status", "--porcelain", "--untracked-files=all").strip():
         raise HarnessError("Working tree must be clean (including untracked files). Commit or move your work first.")
     head = runner.git("rev-parse", "HEAD").strip()
@@ -224,6 +227,8 @@ def execute(args, runner):
         raise HarnessError("Baseline checks already fail; no agent was run.\n" + baseline)
     feedback = ""
     for attempt in range(args.max_repairs + 1):
+        phase = "initial implementation" if attempt == 0 else f"coder repair {attempt}/{args.max_repairs}"
+        print(f"Step {task[2]}: {phase}", flush=True)
         coder_report = runner.agent(CODER_MODEL, CODER_THINKING,
                                     context + (f"\nRepair feedback:\n{feedback}" if feedback else ""))
         _, diff = capture_changes(runner, head, plan, args.allow_path)
@@ -251,23 +256,29 @@ def execute(args, runner):
                 plan_path.write_text(complete_plan(plan, task, evidence))
                 return {"step": int(task[2]), "repairs": attempt, "review": review}
             feedback = json.dumps(review, indent=2)
+        (runner.artifacts / f"attempt-{attempt}.feedback.txt").write_text(feedback)
         if attempt == args.max_repairs:
-            raise HarnessError("Repair budget exhausted; plan remains unchecked.\n" + feedback)
+            raise HarnessError(
+                f"Repair budget exhausted after {attempt} coder repairs (limit: {args.max_repairs}). "
+                f"Manual intervention required; changes preserved and plan remains unchecked. "
+                f"Logs: {runner.artifacts}\n{feedback}"
+            )
     raise AssertionError("Unreachable")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--step", type=int, help="Unfinished step number; default: first unchecked")
-    parser.add_argument("--max-repairs", type=int, default=2)
+    parser.add_argument("--max-repairs", type=int, choices=range(MAX_REPAIRS + 1), default=MAX_REPAIRS,
+                        help="Coder repairs after the initial attempt (default: 3; maximum: 3)")
     parser.add_argument("--timeout", type=int, default=900, help="Seconds per subprocess")
     parser.add_argument("--allow-path", action="append", default=["src", "tests", "docs"], help="Additional allowed file/directory")
     parser.add_argument("--log-dir", type=Path, help="Parent for a unique run directory (must be outside repo)")
     args = parser.parse_args()
     if os.name != "posix":
         parser.error("This harness requires Linux/macOS (POSIX repository locking).")
-    if args.timeout < 1 or args.max_repairs < 0:
-        parser.error("timeout must be positive and max-repairs nonnegative")
+    if args.timeout < 1:
+        parser.error("timeout must be positive")
     if any(Path(p).is_absolute() or ".." in Path(p).parts or p in ("", ".") for p in args.allow_path):
         parser.error("allow-path must be a relative file/directory, without '..'")
     parent = (args.log_dir or Path.home() / ".local/state/langnotebook-harness").resolve()

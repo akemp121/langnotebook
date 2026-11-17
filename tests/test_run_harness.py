@@ -177,6 +177,66 @@ class ExecutionTests(unittest.TestCase):
             h.execute(self.args, self.runner)
         self.assert_unchecked()
 
+    def test_three_rejected_repairs_stop_and_preserve_work(self):
+        self.args.max_repairs = 3
+        self.runner.agent.side_effect = ["Coder", json.dumps(REVISION)] * 4
+        work = self.root / "partial-work.txt"
+        work.write_text("Keep this work")
+        with self.assertRaisesRegex(h.HarnessError, "after 3 coder repairs") as error:
+            h.execute(self.args, self.runner)
+        self.assertIn("Manual intervention required", str(error.exception))
+        self.assertIn(str(self.runner.artifacts), str(error.exception))
+        self.assertEqual(self.runner.agent.call_count, 8)  # Four coder attempts + four Luna reviews.
+        self.assertEqual(self.runner.checks.call_count, 5)  # Baseline + each attempt.
+        for call in self.runner.agent.call_args_list[2::2]:
+            feedback = call.args[2].split("Repair feedback:\n", 1)[1]
+            self.assertEqual(json.loads(feedback), REVISION)
+        self.assertEqual(len(list(self.runner.artifacts.glob("attempt-*.feedback.txt"))), 4)
+        self.assertEqual(json.loads((self.runner.artifacts / "attempt-3.feedback.txt").read_text()), REVISION)
+        self.assertEqual(work.read_text(), "Keep this work")
+        self.assert_unchecked()
+
+    def test_checks_and_rejections_share_three_repair_budget(self):
+        self.args.max_repairs = 3
+        self.runner.checks.side_effect = ["", "TypeScript failure", "", "Lint failure", ""]
+        self.runner.agent.side_effect = ["Coder", "Repair 1", json.dumps(REVISION),
+                                         "Repair 2", "Repair 3", json.dumps(REVISION)]
+        with self.assertRaisesRegex(h.HarnessError, "after 3 coder repairs"):
+            h.execute(self.args, self.runner)
+        calls = self.runner.agent.call_args_list
+        self.assertIn("TypeScript failure", calls[1].args[2])
+        self.assertEqual(json.loads(calls[3].args[2].split("Repair feedback:\n", 1)[1]), REVISION)
+        self.assertIn("Lint failure", calls[4].args[2])
+        self.assertEqual(sum(bool(call.kwargs.get("reviewer")) for call in calls), 2)
+        self.assertEqual(sum(not call.kwargs.get("reviewer") for call in calls), 4)
+        self.assertEqual(self.runner.checks.call_count, 5)
+        self.assert_unchecked()
+
+    def test_approval_on_third_repair_completes_only_selected_step(self):
+        self.args.max_repairs = 3
+        self.runner.agent.side_effect = ["Coder", json.dumps(REVISION)] * 3 + ["Final repair", json.dumps(APPROVAL)]
+        events = Mock()
+        events.attach_mock(self.runner.checks, "checks")
+        events.attach_mock(self.runner.agent, "agent")
+        result = h.execute(self.args, self.runner)
+        self.assertEqual(result["repairs"], 3)
+        self.assertEqual([call[0] for call in events.mock_calls], ["checks"] + ["agent", "checks", "agent"] * 4)
+        for call in self.runner.agent.call_args_list[1::2]:
+            self.assertEqual(call.args[:2], ("openai/gpt-6-luna", "low"))
+            self.assertTrue(call.kwargs["reviewer"])
+        updated = (self.root / "PLAN1.md").read_text()
+        self.assertIn("- [x] **2.", updated)
+        self.assertIn("- [ ] **3.", updated)
+
+    def test_repair_budget_cannot_exceed_three(self):
+        for limit in (-1, 4):
+            with self.subTest(limit=limit), self.assertRaisesRegex(h.HarnessError, "between 0 and 3"):
+                self.args.max_repairs = limit
+                h.execute(self.args, self.runner)
+        self.runner.git.assert_not_called()
+        self.runner.agent.assert_not_called()
+        self.assert_unchecked()
+
     def test_reviewer_changes_block_completion(self):
         with patch.object(h, "capture_changes", side_effect=[(["src/a.tsx"], "before"), (["src/a.tsx"], "after")]):
             with self.assertRaisesRegex(h.HarnessError, "changed during review"):
@@ -211,6 +271,7 @@ class SubprocessAndGitTests(unittest.TestCase):
                     patch.object(h, "execute", return_value={"step": 2}) as execute:
                 self.assertEqual(h.main(), 0)
             self.assertFalse(hasattr(execute.call_args.args[0], "coder_model"))
+            self.assertEqual(execute.call_args.args[0].max_repairs, 3)
             summary = json.loads(next(Path(log_dir).glob("run-*/summary.json")).read_text())
             self.assertEqual(summary["configuration"]["coder_model"], "openai/gpt-6.1-sol")
             self.assertEqual(summary["configuration"]["coder_thinking"], "high")
@@ -219,6 +280,25 @@ class SubprocessAndGitTests(unittest.TestCase):
         help_text = subprocess.check_output([sys.executable, str(Path(h.__file__)), "--help"], text=True)
         for flag in ("--coder-model", "--reviewer-model", "--coder-thinking", "--reviewer-thinking"):
             self.assertNotIn(flag, help_text)
+
+    def test_cli_rejects_repair_budget_above_three(self):
+        result = subprocess.run([sys.executable, str(Path(h.__file__)), "--max-repairs", "4"],
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid choice", result.stderr)
+
+    def test_main_returns_nonzero_and_logs_exhausted_budget(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        plan = self.root / "PLAN1.md"
+        plan.write_text(PLAN)
+        with tempfile.TemporaryDirectory() as log_dir:
+            with patch.object(h, "ROOT", self.root), patch.object(sys, "argv", ["run_harness.py", "--log-dir", log_dir]), \
+                    patch.object(h, "execute", side_effect=h.HarnessError("Repair budget exhausted after 3 coder repairs")):
+                self.assertEqual(h.main(), 1)
+            summary = json.loads(next(Path(log_dir).glob("run-*/summary.json")).read_text())
+            self.assertEqual(summary["status"], "failed")
+            self.assertIn("after 3 coder repairs", summary["error"])
+        self.assertEqual(plan.read_text(), PLAN)
 
     def test_command_failure(self):
         with self.assertRaises(h.HarnessError):
