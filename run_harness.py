@@ -222,21 +222,27 @@ class Runner:
         return "\n\n".join(failures)
 
 
-def capture_changes(runner, head, plan, allowed):
+def capture_changes(runner, head, plan, allowed, recovery=False):
     if runner.git("rev-parse", "HEAD").strip() != head:
         raise HarnessError("Agent changed HEAD; inspect repository manually.")
     if (runner.root / "PLAN1.md").read_text() != plan:
         raise HarnessError("Agent edited PLAN1.md; only the harness may mark completion.")
     names = runner.git("diff", "--name-only", "-z", "--no-renames", "HEAD", "--").split("\0")
     untracked = runner.git("ls-files", "--others", "--exclude-standard", "-z").split("\0")
+    if recovery:
+        names = [name for name in names if name != "PLAN1.md"]
+        untracked = [name for name in untracked if name != "PLAN1.md"]
     paths = sorted(set(filter(None, names + untracked)))
     for path in paths:
         if not any(path == prefix.rstrip("/") or path.startswith(prefix.rstrip("/") + "/") for prefix in allowed):
             raise HarnessError(f"Out-of-scope change: {path}. Inspect manually; --allow-path can widen scope next run.")
-    diff = runner.git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", "HEAD", "--")
+    pathspec = [".", ":(exclude)PLAN1.md"] if recovery else []
+    diff = runner.git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", "HEAD", "--", *pathspec)
     for path in filter(None, untracked):
         diff += runner.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--no-index", "--", os.devnull, path], allowed=(0, 1))
     if not paths:
+        if recovery:
+            return [], "No new code diff. Assess existing committed implementation against the original task criteria.\n"
         raise HarnessError("No changes were produced; cannot claim completion.")
     # Git normally emits only a binary-path notice without --binary. Strip any
     # patch encoding a local config might still produce; fingerprints retain
@@ -390,7 +396,7 @@ def assess_resume(runner, plan, task, status, head):
     evidence.write_text(git_text)
     prior = prior_task_logs(runner, step)
     prompt = (f"READ-ONLY RESUME ASSESSMENT for step {step}. Do not implement, edit, or mark any task complete.\n"
-              f"Selected task:\n{task[0]}\nFull plan (scope/preservation context only):\n{plan}\n"
+              f"Selected task (original criteria):\n{RECOVERY_BLOCK.sub('', task[0])}\nFull plan (scope/preservation context only):\n{plan}\n"
               f"Read AGENTS.md and docs/SPEC.md. Read the Git evidence at {evidence}.\n"
               f"Relevant prior run directories (read summaries, check logs, coder/reviewer reports as evidence): {json.dumps(prior)}\n"
               "Inspect current code, tests, docs, screenshots, and available verification evidence. "
@@ -413,6 +419,24 @@ def assess_resume(runner, plan, task, status, head):
     return {"status": "assessed", "step": step, "assessment": assessment, "prior_run_logs": prior}
 
 
+RECOVERY_BLOCK = re.compile(r"\n  <!-- harness-recovery:start -->\n.*?\n  <!-- harness-recovery:end -->", re.S)
+
+
+def recovery_plan(plan, task, actions, verified):
+    """Only replace our nested block within the selected task; leave other tasks intact."""
+    body = RECOVERY_BLOCK.sub("", task[0])
+    items = [*actions, "Revalidate lint, typecheck, and existing tests.",
+             "Independent review against the original completion criteria."]
+    lines = ["  <!-- harness-recovery:start -->", "  **Recovery plan**"]
+    for index, action in enumerate(items):
+        # Keep model text on one indented line; never create a top-level task.
+        label = " ".join(action.split())
+        lines.append(f"  - [{'x' if index in verified else ' '}] {label}")
+    lines.append("  <!-- harness-recovery:end -->")
+    content = body.rstrip("\n") + "\n" + "\n".join(lines) + (body[len(body.rstrip('\n')):] or "\n")
+    return plan[:task.start()] + content + plan[task.end():]
+
+
 def complete_plan(plan, task, evidence):
     replacement = task[0].replace("- [ ]", "- [x]", 1).rstrip() + f" **Recorded:** {evidence}\n\n"
     return plan[:task.start()] + replacement + plan[task.end():]
@@ -428,29 +452,63 @@ def execute(args, runner):
     plan_path = runner.root / "PLAN1.md"
     plan = plan_path.read_text()
     task = select_task(plan, args.step)
-    if getattr(args, "resume", False):
-        return assess_resume(runner, plan, task, status, head)
+    recovery = getattr(args, "resume", False)
+    assessment_result = None
+    actions, verified = [], set()
+    original_task = RECOVERY_BLOCK.sub("", task[0])
+    if recovery:
+        assessment_result = assess_resume(runner, plan, task, status, head)
+        actions = assessment_result["assessment"]["remaining_actions"]
+
+    def persist_progress():
+        nonlocal plan, task
+        if plan_path.read_text() != plan:
+            raise HarnessError("PLAN1.md changed outside the harness; refusing to overwrite it.")
+        plan = recovery_plan(plan, task, actions, verified)
+        plan_path.write_text(plan)
+        task = select_task(plan, int(task[2]))
+
+    if recovery:
+        persist_progress()
     context = (f"Implement ONLY step {task[2]} below; stop before the next step.\n"
-               f"SELECTED TASK:\n{task[0]}\nFULL PLAN (context, not authorization for other steps):\n{plan}\n"
+               f"SELECTED TASK (original criteria):\n{original_task}\nFULL PLAN (context, not authorization for other steps):\n{plan}\n"
                f"AGENTS.md:\n{(runner.root / 'AGENTS.md').read_text()}\n"
                f"SPECIFICATION (docs/SPEC.md):\n{(runner.root / 'docs/SPEC.md').read_text()}\n"
                f"Allowed changes: {args.allow_path}. Do not edit PLAN1.md, commit, reset, or change branches. "
                "Preserve the shell and disabled controls. Add/update relevant tests; do not enable deferred features. "
                "Follow version-matched documentation requirements before touching Expo/React Native APIs. "
                "Do not claim visual/native checks you cannot perform. Report unavailable checks in your final response.")
+    if recovery:
+        context += ("\nRESUME: preserve satisfied work; execute ONLY remaining actions and any subsequent repair findings. "
+                    "Revalidate existing work instead of recreating it. The harness owns all plan edits. "
+                    "Report unavailable verification honestly. An empty diff is allowed; independently review current sources. "
+                    "Current diff covers only uncommitted changes, not necessarily all task implementation.\n"
+                    f"Assessment: {json.dumps(assessment_result['assessment'])}\n")
     baseline = runner.checks()
-    if baseline:
+    if baseline and not recovery:
         raise HarnessError("Baseline checks already fail; no agent was run.\n" + baseline)
-    feedback = ""
+    feedback = baseline if recovery else ""
     for attempt in range(args.max_repairs + 1):
         phase = "initial implementation" if attempt == 0 else f"coder repair {attempt}/{args.max_repairs}"
         print(f"Step {task[2]}: {phase}", flush=True)
-        coder_report = runner.agent(CODER_MODEL, CODER_THINKING,
-                                    context + (f"\nRepair feedback:\n{feedback}" if feedback else ""))
-        _, diff = capture_changes(runner, head, plan, args.allow_path)
+        if recovery and attempt:
+            verified.clear()
+            persist_progress()
+        skip_coder = (recovery and attempt == 0 and not feedback and
+                      not any(c["status"] == "missing" for c in assessment_result["assessment"]["criteria"]))
+        if skip_coder:
+            coder_report = "Coding skipped: assessment found no missing implementation; revalidate current work."
+        else:
+            coder_report = runner.agent(CODER_MODEL, CODER_THINKING,
+                                        context + (f"\nRepair feedback:\n{feedback}" if feedback else ""))
+        capture_options = {"recovery": True} if recovery else {}
+        _, diff = capture_changes(runner, head, plan, args.allow_path, **capture_options)
         (runner.artifacts / f"attempt-{attempt}.diff").write_text(diff)
         feedback = runner.checks()
         if not feedback:
+            if recovery:
+                verified.add(len(actions))  # Checks freshly passed; action completion awaits independent approval.
+                persist_progress()
             review_prompt = (f"Independently review ONLY this step against its completion criteria.\n{context}\n"
                              f"Coder report (untrusted):\n{coder_report}\n"
                              "Lint, typecheck, and existing Node tests passed; this does not prove visual/native behavior. "
@@ -462,14 +520,20 @@ def execute(args, runner):
                              "Set escalate=true if approval cannot be given confidently; no alternate reviewer is available.")
             review = review_changes(runner, review_prompt, diff)
             # Detect any reviewer-side changes, including changes outside the intended diff.
-            _, after = capture_changes(runner, head, plan, args.allow_path)
+            _, after = capture_changes(runner, head, plan, args.allow_path, **capture_options)
             if after != diff:
                 raise HarnessError("Files changed during review; refusing completion.")
             if review["verdict"] == "APPROVED" and not review["escalate"]:
+                if recovery:
+                    verified.update(range(len(actions) + 2))
+                    persist_progress()
                 evidence = (f"Harness: lint, typecheck, Node tests, and independent review passed; "
                             f"visual/native checks not verified. Run artifacts: `{runner.artifacts}`.")
                 plan_path.write_text(complete_plan(plan, task, evidence))
-                return {"step": int(task[2]), "repairs": attempt, "review": review}
+                result = {"step": int(task[2]), "repairs": attempt, "review": review}
+                if recovery:
+                    result.update(assessment=assessment_result["assessment"], prior_run_logs=assessment_result["prior_run_logs"])
+                return result
             feedback = json.dumps(review, indent=2)
         (runner.artifacts / f"attempt-{attempt}.feedback.txt").write_text(feedback)
         if attempt == args.max_repairs:
@@ -485,7 +549,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--step", type=int, help="Unfinished step number; default: first unchecked")
     parser.add_argument("--resume", action="store_true",
-                        help="Read-only assessment of partial work; execution/recovery sub-plan not yet implemented")
+                        help="Assess partial work, persist a recovery sub-plan, and execute only remaining work")
     parser.add_argument("--max-repairs", type=int, choices=range(MAX_REPAIRS + 1), default=MAX_REPAIRS,
                         help="Coder repairs after the initial attempt (default: 3; maximum: 3)")
     parser.add_argument("--timeout", type=int, default=900, help="Seconds per subprocess")
@@ -521,15 +585,7 @@ def main():
                 raise HarnessError("Another harness run holds the repository lock.") from exc
             result = execute(args, runner)
             summary.update({"status": "approved"}, **result)
-        if summary["status"] == "assessed":
-            for criterion in summary["assessment"]["criteria"]:
-                print(f"[{criterion['status']}] {criterion['criterion']}: {criterion['evidence']}")
-            for action in summary["assessment"]["remaining_actions"]:
-                print(f"Remaining: {action}")
-            print(f"Step {summary['step']} assessed only; no task was executed or checked off. "
-                  f"Assessment: {artifacts / 'assessment.json'}. Recovery execution is deferred to refactor step 5.")
-        else:
-            print(f"Step {summary['step']} approved and checked off. Changes are NOT committed.")
+        print(f"Step {summary['step']} approved and checked off. Changes are NOT committed.")
         return 0
     except (HarnessError, OSError, KeyboardInterrupt) as exc:
         summary["error"] = str(exc) or "Interrupted"

@@ -61,7 +61,9 @@ class ResumeTests(unittest.TestCase):
     def run_assessment(self, value=None):
         with patch.object(self.runner, "agent", return_value=json.dumps(value or assessment())) as agent, \
                 patch.object(self.runner, "checks") as checks:
-            result = h.execute(self.args, self.runner)
+            plan = (self.root / "PLAN1.md").read_text()
+            result = h.assess_resume(self.runner, plan, h.select_task(plan, self.args.step),
+                                     self.git("status", "--porcelain"), self.git("rev-parse", "HEAD").strip())
         checks.assert_not_called()
         self.assertEqual(agent.call_count, 1)
         self.assertEqual(agent.call_args.args[:2], ("openai/gpt-6.1-sol", "high"))
@@ -150,15 +152,120 @@ class ResumeTests(unittest.TestCase):
         self.assertIn("--no-extensions", cmd)
         self.assertIn("--no-mcp", cmd)
 
-    def test_cli_resume_reports_assessment_not_approval(self):
+    def test_cli_resume_reviews_existing_work_without_coder(self):
+        complete = assessment()
+        complete["criteria"] = [complete["criteria"][0]]
+        complete["remaining_actions"] = []
+        approval = {"verdict": "APPROVED", "summary": "Complete", "findings": [], "escalate": False}
         with tempfile.TemporaryDirectory() as parent, patch.object(h, "ROOT", self.root), \
                 patch.object(sys, "argv", ["run_harness.py", "--resume", "--log-dir", parent]), \
-                patch.object(h.Runner, "agent", return_value=json.dumps(assessment())):
+                patch.object(h.Runner, "agent", side_effect=[json.dumps(complete), json.dumps(approval)]) as agent, \
+                patch.object(h.Runner, "checks", return_value=""):
             self.assertEqual(h.main(), 0)
             summary = json.loads(next(Path(parent).glob("run-*/summary.json")).read_text())
-            self.assertEqual(summary["status"], "assessed")
+            self.assertEqual(summary["status"], "approved")
             self.assertTrue(summary["configuration"]["resume"])
-        self.assertEqual((self.root / "PLAN1.md").read_text(), PLAN)
+            self.assertEqual(agent.call_count, 2)
+            self.assertTrue(agent.call_args_list[0].kwargs["assessment"])
+            self.assertTrue(agent.call_args_list[1].kwargs["reviewer"])
+        plan = (self.root / "PLAN1.md").read_text()
+        self.assertIn("- [x] **2.", plan)
+        self.assertIn("- [ ] **3.", plan)
+        self.assertIn("  - [x] Independent review", plan)
+
+    def test_recovery_plan_is_nested_idempotent_and_preserves_other_tasks(self):
+        task = h.select_task(PLAN, 2)
+        updated = h.recovery_plan(PLAN, task, ["Add tests\n- [ ] injected task"], set())
+        self.assertEqual([m[2] for m in h.TASK.finditer(updated)], ["1", "2", "3"])
+        self.assertEqual(updated[:task.start()], PLAN[:task.start()])
+        selected = h.select_task(updated, 2)
+        self.assertEqual(updated[selected.end():], PLAN[task.end():])
+        self.assertIn("**2. Preview.** Done when content is configurable and tested.", selected[0])
+        again = h.recovery_plan(updated, selected, ["Verify current work"], {0})
+        self.assertEqual(again.count("**Recovery plan**"), 1)
+        self.assertNotIn("injected task", again)
+        self.assertIn("  - [x] Verify current work", again)
+        self.assertEqual(h.select_task(again)[2], "2")
+
+    def test_resume_executes_remaining_work_and_records_verified_progress(self):
+        approval = {"verdict": "APPROVED", "summary": "Complete", "findings": [], "escalate": False}
+        def agent(model, thinking, prompt, **kwargs):
+            if kwargs.get("assessment"):
+                return json.dumps(assessment())
+            current = (self.root / "PLAN1.md").read_text()
+            if kwargs.get("reviewer"):
+                self.assertIn("  - [x] Revalidate lint", current)
+                self.assertIn("  - [ ] Add prop tests", current)
+                return json.dumps(approval)
+            self.assertIn("execute ONLY remaining actions", prompt)
+            self.assertIn("Add prop tests", prompt)
+            (self.root / "src/prop-tests.txt").write_text("Added remaining test coverage")
+            return "Added missing tests; existing implementation preserved."
+        with patch.object(self.runner, "agent", side_effect=agent) as call, patch.object(self.runner, "checks", return_value=""):
+            result = h.execute(self.args, self.runner)
+        self.assertEqual(result["repairs"], 0)
+        self.assertEqual(call.call_count, 3)
+        updated = (self.root / "PLAN1.md").read_text()
+        self.assertIn("  - [x] Add prop tests", updated)
+        self.assertIn("  - [x] Verify device behavior", updated)
+        self.assertIn("- [x] **2.", updated)
+        self.assertIn("- [ ] **3.", updated)
+
+    def test_rejected_recovery_keeps_unverified_actions_and_parent_unchecked(self):
+        self.args.max_repairs = 0
+        rejection = {"verdict": "NEEDS_REVISION", "summary": "Tests missing", "findings": [
+            {"file": "src/preview.txt", "line": 1, "message": "Add tests"}], "escalate": False}
+        with patch.object(self.runner, "agent", side_effect=[json.dumps(assessment()), "Coder", json.dumps(rejection)]), \
+                patch.object(self.runner, "checks", return_value=""), self.assertRaisesRegex(h.HarnessError, "budget exhausted"):
+            h.execute(self.args, self.runner)
+        updated = (self.root / "PLAN1.md").read_text()
+        self.assertIn("- [ ] **2.", updated)
+        self.assertIn("  - [ ] Add prop tests", updated)
+        self.assertIn("  - [x] Revalidate lint", updated)
+        self.assertIn("  - [ ] Independent review", updated)
+
+    def test_resume_review_rejection_triggers_only_targeted_repair(self):
+        complete = assessment()
+        complete["criteria"] = [complete["criteria"][0]]
+        complete["remaining_actions"] = []
+        rejection = {"verdict": "NEEDS_REVISION", "summary": "Missing edge case", "findings": [
+            {"file": "src/preview.txt", "line": 1, "message": "Add empty-content handling"}], "escalate": False}
+        approval = {"verdict": "APPROVED", "summary": "Complete", "findings": [], "escalate": False}
+        def agent(model, thinking, prompt, **kwargs):
+            if kwargs.get("assessment"):
+                return json.dumps(complete)
+            if kwargs.get("reviewer"):
+                return json.dumps(rejection if "empty-handled" not in (self.root / "src/preview.txt").read_text() else approval)
+            self.assertIn("Add empty-content handling", prompt)
+            self.assertIn("execute ONLY remaining actions", prompt)
+            self.assertIn("  - [ ] Revalidate lint", (self.root / "PLAN1.md").read_text())
+            (self.root / "src/preview.txt").write_text("configurable content; empty-handled")
+            return "Fixed only the edge case"
+        with patch.object(self.runner, "agent", side_effect=agent) as calls, patch.object(self.runner, "checks", return_value=""):
+            result = h.execute(self.args, self.runner)
+        self.assertEqual(result["repairs"], 1)
+        self.assertEqual(calls.call_count, 4)  # Assessment, rejected review, targeted repair, approval.
+        self.assertIn("- [x] **2.", (self.root / "PLAN1.md").read_text())
+
+    def test_resume_repairs_preexisting_check_failures(self):
+        complete = assessment()
+        complete["criteria"] = [complete["criteria"][0]]
+        complete["remaining_actions"] = []
+        approval = {"verdict": "APPROVED", "summary": "Complete", "findings": [], "escalate": False}
+        with patch.object(self.runner, "agent", side_effect=[json.dumps(complete), "Fixed check failure", json.dumps(approval)]) as agent, \
+                patch.object(self.runner, "checks", side_effect=["Existing test failure", ""]):
+            h.execute(self.args, self.runner)
+        self.assertIn("Existing test failure", agent.call_args_list[1].args[2])
+
+    def test_recovery_capture_allows_empty_diff_but_normal_capture_does_not(self):
+        head = self.git("rev-parse", "HEAD").strip()
+        with self.assertRaisesRegex(h.HarnessError, "No changes"):
+            h.capture_changes(self.runner, head, PLAN, self.args.allow_path)
+        nested = h.recovery_plan(PLAN, h.select_task(PLAN), [], set())
+        (self.root / "PLAN1.md").write_text(nested)
+        paths, diff = h.capture_changes(self.runner, head, nested, self.args.allow_path, recovery=True)
+        self.assertEqual(paths, [])
+        self.assertIn("No new code diff", diff)
 
 
 if __name__ == "__main__":
