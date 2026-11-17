@@ -14,6 +14,7 @@ import tempfile
 import time
 
 from harness_state import StateError, TaskCheckpoint, digest
+from harness_reporting import failure_report
 
 ROOT = Path(__file__).resolve().parent
 TASK = re.compile(r"^- \[([ xX])\] \*\*(\d+)\. .*?(?=^- \[[ xX]\] |^## |\Z)", re.M | re.S)
@@ -127,6 +128,7 @@ class Runner:
     def __init__(self, root, artifacts, timeout):
         self.root, self.artifacts, self.timeout = root, artifacts, timeout
         self.records = []
+        self.progress = {"phase": "startup", "coder_attempts": 0}
 
     def run(self, cmd, prompt=None, allowed=(0,)):
         index = len(self.records) + 1
@@ -446,6 +448,9 @@ def complete_plan(plan, task, evidence):
 
 
 def execute(args, runner, checkpoint=None):
+    if not isinstance(getattr(runner, "progress", None), dict):
+        runner.progress = {"phase": "startup", "coder_attempts": 0}
+    runner.progress.update(phase="repository preflight")
     if not 0 <= args.max_repairs <= MAX_REPAIRS:
         raise HarnessError(f"max-repairs must be between 0 and {MAX_REPAIRS}.")
     status = runner.git("status", "--porcelain", "--untracked-files=all")
@@ -455,6 +460,7 @@ def execute(args, runner, checkpoint=None):
     plan_path = runner.root / "PLAN1.md"
     plan = plan_path.read_text()
     task = select_task(plan, args.step)
+    runner.progress.update(step=int(task[2]), task=RECOVERY_BLOCK.sub("", task[0]), phase="task selection")
     recovery = getattr(args, "resume", False)
     assessment_result = None
     actions, verified = [], set()
@@ -462,13 +468,16 @@ def execute(args, runner, checkpoint=None):
     ready_for_review = False
     if checkpoint:
         fingerprint = digest("\n".join(line for line in RECOVERY_BLOCK.sub("", plan).splitlines() if line.strip()))
+        runner.progress.update(phase="checkpoint preparation")
         checkpoint.prepare(plan, int(task[2]), fingerprint, prior_task_logs(runner, int(task[2])))
         ready_for_review = checkpoint.reusable and checkpoint.data["phase"] in ("coded", "checked", "reviewing")
     if recovery:
+        runner.progress.update(phase="assessment")
         cached = checkpoint.data.get("assessment") if checkpoint and checkpoint.reusable else None
         assessment_result = ({"assessment": cached, "prior_run_logs": prior_task_logs(runner, int(task[2]))} if cached else
                              assess_resume(runner, plan, task, status, head))
         actions = assessment_result["assessment"]["remaining_actions"]
+        runner.progress.update(assessment=assessment_result["assessment"])
         if checkpoint:
             checkpoint.save(checkpoint.data["phase"], assessment=assessment_result["assessment"])
 
@@ -496,7 +505,9 @@ def execute(args, runner, checkpoint=None):
                     "Report unavailable verification honestly. An empty diff is allowed; independently review current sources. "
                     "Current diff covers only uncommitted changes, not necessarily all task implementation.\n"
                     f"Assessment: {json.dumps(assessment_result['assessment'])}\n")
+    runner.progress.update(phase="baseline checks", checks_passed=False, check_failures=None)
     baseline = runner.checks()
+    runner.progress.update(check_failures=baseline, checks_passed=not baseline)
     if baseline and not recovery:
         raise HarnessError("Baseline checks already fail; no agent was run.\n" + baseline)
     feedback = baseline if recovery else ""
@@ -513,10 +524,13 @@ def execute(args, runner, checkpoint=None):
         if skip_coder:
             coder_report = "Coding skipped: assessment found no missing implementation; revalidate current work."
         else:
+            runner.progress.update(phase="coding", checks_passed=False)
             if checkpoint:
                 checkpoint.start_coder()
+            runner.progress["coder_attempts"] += 1
             coder_report = runner.agent(CODER_MODEL, CODER_THINKING,
                                         context + (f"\nRepair feedback:\n{feedback}" if feedback else ""))
+        runner.progress.update(coder_report=coder_report, phase="change validation")
         if checkpoint:
             checkpoint.save("coded", feedback="", coder_started=True)
         capture_options = {"recovery": True} if recovery else {}
@@ -524,7 +538,9 @@ def execute(args, runner, checkpoint=None):
             capture_options["base"] = checkpoint.data["base"]
         _, diff = capture_changes(runner, head, plan, args.allow_path, **capture_options)
         (runner.artifacts / f"attempt-{attempt}.diff").write_text(diff)
+        runner.progress.update(phase="post-change checks", checks_passed=False, check_failures=None)
         feedback = runner.checks()
+        runner.progress.update(check_failures=feedback, checks_passed=not feedback)
         if checkpoint:
             checkpoint.save("checks_failed" if feedback else "checked", feedback=feedback)
         if not feedback:
@@ -540,14 +556,17 @@ def execute(args, runner, checkpoint=None):
                              '"findings":[{"file":"relative/path", "line":1, "message":"actionable issue"}], "escalate":false}. '
                              "Approval requires zero findings; revision requires at least one. "
                              "Set escalate=true if approval cannot be given confidently; no alternate reviewer is available.")
+            runner.progress.update(phase="review")
             if checkpoint:
                 checkpoint.save("reviewing")
             review = review_changes(runner, review_prompt, diff)
+            runner.progress.update(review=review, phase="review validation")
             # Detect any reviewer-side changes, including changes outside the intended diff.
             _, after = capture_changes(runner, head, plan, args.allow_path, **capture_options)
             if after != diff:
                 raise HarnessError("Files changed during review; refusing completion.")
             if review["verdict"] == "APPROVED" and not review["escalate"]:
+                runner.progress.update(phase="completion")
                 if recovery:
                     verified.update(range(len(actions) + 2))
                     persist_progress()
@@ -565,6 +584,7 @@ def execute(args, runner, checkpoint=None):
                 checkpoint.save("rejected", findings=review, feedback=feedback)
         (runner.artifacts / f"attempt-{attempt}.feedback.txt").write_text(feedback)
         if attempt == args.max_repairs:
+            runner.progress.update(phase="repair budget exhausted")
             raise HarnessError(
                 f"Repair budget exhausted after {attempt} coder repairs (limit: {args.max_repairs}). "
                 f"Manual intervention required; changes preserved and plan remains unchecked. "
@@ -602,11 +622,13 @@ def main():
     artifacts = Path(tempfile.mkdtemp(prefix="run-", dir=parent))
     runner = Runner(ROOT, artifacts, args.timeout)
     configuration = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+    configuration["log_dir"] = str(parent)
     configuration.update(coder_model=CODER_MODEL, coder_thinking=CODER_THINKING,
                          reviewer_model=REVIEWER_MODEL, reviewer_thinking=REVIEWER_THINKING)
     summary = {"status": "failed", "repository": str(ROOT), "configuration": configuration}
     print(f"Run logs: {artifacts}", flush=True)
     start = time.monotonic()
+    checkpoint = TaskCheckpoint(runner, args)
     try:
         # Prevent overlapping harness runs without leaving stale lock files after interruption.
         import fcntl  # This repository's Linux/macOS harness requires POSIX flock.
@@ -616,12 +638,18 @@ def main():
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
                 raise HarnessError("Another harness run holds the repository lock.") from exc
-            result = execute(args, runner, TaskCheckpoint(runner, args))
+            result = execute(args, runner, checkpoint)
             summary.update({"status": "approved"}, **result)
         print(f"Step {summary['step']} approved and checked off. Changes are NOT committed.")
         return 0
     except (HarnessError, StateError, OSError, KeyboardInterrupt) as exc:
         summary["error"] = str(exc) or "Interrupted"
+        if not runner.progress.get("step"):
+            try:
+                selected = select_task((ROOT / "PLAN1.md").read_text(), args.step)
+                runner.progress.update(step=int(selected[2]), task=selected[0])
+            except (OSError, HarnessError):
+                pass
         print(f"Stopped: {summary['error']}\nChanges preserved; inspect them before retrying.", file=sys.stderr)
         return 1
     finally:
@@ -631,7 +659,20 @@ def main():
         summary["reported_tokens"] = sum(u.get("totalTokens", 0) for u in usage)
         summary["reported_cost"] = sum(u.get("cost", {}).get("total", 0) for u in usage)
         summary["cost_note"] = "Provider-reported messages and compaction only; missing usage is not estimated and zero cost is not proof of free usage."
-        (artifacts / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        summary["progress"] = runner.progress
+        summary["checkpoint"] = {key: value for key, value in checkpoint.data.items() if key not in ("files", "task_paths")}
+        try:
+            (artifacts / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        except OSError as exc:
+            print(f"Could not write summary.json: {exc}", file=sys.stderr)
+        if summary["status"] == "failed":
+            report, command = failure_report(summary, runner.progress, checkpoint.data, artifacts)
+            try:
+                path = artifacts / "failure.md"
+                path.write_text(report)
+                print(f"Failure report: {path}\nRecovery command (inspect report first):\n{command}", file=sys.stderr)
+            except OSError as exc:
+                print(f"Could not write failure.md: {exc}\nRecovery command (inspect preserved logs first):\n{command}", file=sys.stderr)
 
 
 if __name__ == "__main__":
