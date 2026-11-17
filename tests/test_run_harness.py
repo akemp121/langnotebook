@@ -90,6 +90,63 @@ class ParsingTests(unittest.TestCase):
         self.assertIn("pi --list-models is not proof of access", text)
 
 
+class ReviewInfrastructureTests(unittest.TestCase):
+    def test_distinct_agent_failures(self):
+        for stop, content, expected in [
+            ("length", [], "output/token budget"),
+            ("stop", [], "empty assistant response"),
+            ("aborted", [], "stopReason=aborted"),
+        ]:
+            events = [{"type": "message_end", "message": {"role": "assistant", "content": content, "stopReason": stop}},
+                      {"type": "agent_settled", "aborted": False}]
+            with self.subTest(stop=stop), self.assertRaisesRegex(h.InfrastructureError, expected):
+                h.parse_events("\n".join(map(json.dumps, events)))
+        with self.assertRaisesRegex(h.InfrastructureError, "empty response"):
+            h.parse_events("")
+
+    def test_invalid_jsonl_is_not_a_format_retry(self):
+        with self.assertRaisesRegex(h.InfrastructureError, "Invalid Pi JSONL"):
+            h.parse_events("not a protocol record")
+        runner = Mock()
+        runner.agent.side_effect = h.InfrastructureError("invalid JSONL")
+        with self.assertRaises(h.InfrastructureError):
+            h.review_changes(runner, "Review", "diff")
+        self.assertEqual(runner.agent.call_count, 1)
+
+    def test_large_diff_is_fully_reviewed_with_bounded_prompts(self):
+        runner = Mock()
+        diff = "".join(f"diff --git a/file{i}.txt b/file{i}.txt\n+" + "x" * 900 + "\n" for i in range(12))
+        runner.agent.return_value = json.dumps(APPROVAL)
+        with patch.object(h, "MAX_REVIEW_PROMPT_BYTES", 6000):
+            result = h.review_changes(runner, "Review", diff)
+        self.assertEqual(result["verdict"], "APPROVED")
+        self.assertGreater(runner.agent.call_count, 1)
+        prompts = [call.args[2] for call in runner.agent.call_args_list]
+        self.assertTrue(all(len(p.encode()) <= 6000 for p in prompts))
+        for line in diff.splitlines():
+            self.assertTrue(any(line in prompt for prompt in prompts))
+        self.assertIn(f"/{len(prompts)}", prompts[-1])
+
+    def test_all_parts_must_pass_and_findings_are_combined(self):
+        runner = Mock()
+        runner.agent.side_effect = [json.dumps(REVISION), json.dumps(APPROVAL)]
+        with patch.object(h, "split_review_changes", return_value=["part one", "part two"]):
+            result = h.review_changes(runner, "Review", "diff")
+        self.assertEqual(result["verdict"], "NEEDS_REVISION")
+        self.assertEqual(result["findings"], REVISION["findings"])
+        self.assertEqual(runner.agent.call_count, 2)
+
+    def test_oversized_context_line_or_part_count_stops_before_model_calls(self):
+        runner = Mock()
+        with self.assertRaisesRegex(h.InfrastructureError, "context exceeds"):
+            h.review_changes(runner, "x" * h.MAX_REVIEW_PROMPT_BYTES, "diff")
+        with self.assertRaisesRegex(h.InfrastructureError, "diff line exceeds"):
+            h.split_review_changes("x" * 5000, 2000)
+        with patch.object(h, "MAX_REVIEW_PARTS", 1), self.assertRaisesRegex(h.InfrastructureError, "limit 1"):
+            h.split_review_changes(("x" * 900 + "\n") * 5, 2000)
+        runner.agent.assert_not_called()
+
+
 class ExecutionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -149,11 +206,20 @@ class ExecutionTests(unittest.TestCase):
             ("openai/gpt-6.1-sol", "high"), ("openai/gpt-6-luna", "low")])
         self.assertEqual(self.runner.checks.call_count, 3)
 
-    def test_malformed_review_does_not_substitute_sol(self):
-        self.runner.agent.side_effect = ["Coder", "bad"]
-        with self.assertRaisesRegex(h.HarnessError, "valid JSON"):
+    def test_malformed_review_retries_format_once_without_coder_repair(self):
+        self.runner.agent.side_effect = ["Coder", "bad", json.dumps(APPROVAL)]
+        result = h.execute(self.args, self.runner)
+        self.assertEqual(result["repairs"], 0)
+        self.assertEqual(self.runner.agent.call_count, 3)
+        self.assertEqual(self.runner.agent.call_args_list[-1].args[:2], (h.REVIEWER_MODEL, "low"))
+        self.assertIn("failed schema validation", self.runner.agent.call_args_list[-1].args[2])
+
+    def test_persistent_malformed_review_stops_without_coder_repair(self):
+        self.runner.agent.side_effect = ["Coder", "bad", "still bad"]
+        with self.assertRaisesRegex(h.InfrastructureError, "after one formatting retry") as error:
             h.execute(self.args, self.runner)
-        self.assertEqual(self.runner.agent.call_count, 2)
+        self.assertIn("preserved work manually", str(error.exception))
+        self.assertEqual(self.runner.agent.call_count, 3)
         self.assert_unchecked()
 
     def test_review_access_error_does_not_substitute_sol(self):
@@ -306,8 +372,15 @@ class SubprocessAndGitTests(unittest.TestCase):
 
     def test_timeout(self):
         self.runner.timeout = 0.05
-        with self.assertRaises(h.HarnessError):
+        with self.assertRaisesRegex(h.InfrastructureError, "timed out"):
             self.runner.run([sys.executable, "-c", "import time; time.sleep(30)"])
+
+    def test_check_timeout_does_not_enter_coder_repair_loop(self):
+        (self.root / "tests").mkdir()
+        (self.root / "tests/example.test.cjs").write_text("")
+        with patch.object(self.runner, "run", side_effect=h.InfrastructureError("timed out")):
+            with self.assertRaisesRegex(h.InfrastructureError, "timed out"):
+                self.runner.checks()
 
     def test_large_stdin_stdout_no_deadlock(self):
         result = self.runner.run([sys.executable, "-c", "import sys; print('x'*100000); print(len(sys.stdin.read()))"], "p" * 100000)
@@ -333,6 +406,17 @@ class SubprocessAndGitTests(unittest.TestCase):
         self.assertEqual(paths, ["src/new.txt", "src/old.txt"])
         self.assertIn("+staged", diff)
         self.assertIn("+untracked", diff)
+        (self.root / "src/image.png").write_bytes(b"\x89PNG\x00before")
+        git("add", "src/image.png")
+        (self.root / "src/new-image.png").write_bytes(b"\x89PNG\x00new")
+        _, binary_diff = h.capture_changes(self.runner, head, PLAN, ["src"])
+        self.assertNotIn("GIT binary patch", binary_diff)
+        self.assertIn("src/image.png", binary_diff)
+        self.assertIn("src/new-image.png", binary_diff)
+        self.assertIn("sha256=", binary_diff)
+        (self.root / "src/image.png").write_bytes(b"\x89PNG\x00after!")
+        _, changed_binary = h.capture_changes(self.runner, head, PLAN, ["src"])
+        self.assertNotEqual(binary_diff, changed_binary)
         (self.root / "unrelated.txt").write_text("unwanted")
         with self.assertRaisesRegex(h.HarnessError, "Out-of-scope"):
             h.capture_changes(self.runner, head, PLAN, ["src"])

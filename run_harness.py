@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute one PLAN1.md step. Standard library only; see HARNESS_REFACTOR.md."""
 import argparse
+import hashlib
 from datetime import datetime, timezone
 import json
 import os
@@ -20,10 +21,16 @@ CODER_THINKING = "high"
 REVIEWER_MODEL = "openai/gpt-6-luna"
 REVIEWER_THINKING = "low"
 MAX_REPAIRS = 3
+MAX_REVIEW_PROMPT_BYTES = 64_000
+MAX_REVIEW_PARTS = 32
 
 
 class HarnessError(RuntimeError):
     pass
+
+
+class InfrastructureError(HarnessError):
+    """Execution/protocol failure, not evidence that implementation needs repair."""
 
 
 def select_task(plan, number=None):
@@ -66,9 +73,15 @@ def parse_events(output):
         try:
             event = json.loads(line)
         except ValueError as exc:
-            raise HarnessError("Invalid Pi JSONL output (see saved log).") from exc
-        if event.get("type") == "message_end" and event.get("message", {}).get("role") == "assistant":
-            messages.append(event["message"])
+            raise InfrastructureError("Invalid Pi JSONL output (see saved log).") from exc
+        if not isinstance(event, dict):
+            raise InfrastructureError("Invalid Pi JSONL record: expected an object.")
+        if event.get("type") == "message_end":
+            message = event.get("message")
+            if not isinstance(message, dict):
+                raise InfrastructureError("Invalid Pi JSONL message: expected an object.")
+            if message.get("role") == "assistant":
+                messages.append(message)
         if event.get("type") == "agent_settled":
             settled = not event.get("aborted", False)
     if messages and messages[-1].get("stopReason") == "error":
@@ -78,10 +91,22 @@ def parse_events(output):
         guidance = ""
         if any(term in detail.lower() for term in ("401", "403", "model_not_found", "does not have access", "permission")):
             guidance = " Check the API key/project's model permissions; pi --list-models is not proof of access."
-        raise HarnessError(f"Pi model {model} failed: {detail}{guidance}")
-    if not settled or not messages or messages[-1].get("stopReason") == "aborted":
-        raise HarnessError("Pi did not finish successfully (see saved log).")
-    text = "\n".join(c.get("text", "") for c in messages[-1].get("content", []) if c.get("type") == "text")
+        raise InfrastructureError(f"Pi model {model} failed: {detail}{guidance}")
+    if messages and messages[-1].get("stopReason") == "length":
+        raise InfrastructureError("Pi exhausted its output/token budget (stopReason=length); no completed answer was returned.")
+    if not messages:
+        raise InfrastructureError("Pi returned an empty response: no assistant message.")
+    if not settled or messages[-1].get("stopReason") != "stop":
+        raise InfrastructureError(f"Pi did not finish successfully (stopReason={messages[-1].get('stopReason')}). See saved log.")
+    content = messages[-1].get("content")
+    if not isinstance(content, list) or any(not isinstance(c, dict) for c in content):
+        raise InfrastructureError("Invalid Pi assistant content: expected content blocks.")
+    texts = [c.get("text") for c in content if c.get("type") == "text"]
+    if any(not isinstance(text, str) for text in texts):
+        raise InfrastructureError("Invalid Pi assistant text block.")
+    text = "\n".join(texts)
+    if not text.strip():
+        raise InfrastructureError("Pi returned an empty assistant response.")
     return text, [m.get("usage", {}) for m in messages]
 
 
@@ -125,7 +150,8 @@ class Runner:
                 record["returncode"] = proc.returncode
             except (OSError, subprocess.TimeoutExpired) as exc:
                 record["error"] = str(exc)
-                raise HarnessError(f"Command failed: {cmd[0]}: {exc}") from exc
+                reason = f"timed out after {self.timeout}s" if isinstance(exc, subprocess.TimeoutExpired) else str(exc)
+                raise InfrastructureError(f"Command infrastructure failure: {cmd[0]}: {reason}") from exc
             finally:
                 record["seconds"] = round(time.monotonic() - start, 3)
             stdout.seek(0)
@@ -150,6 +176,13 @@ class Runner:
         try:
             text, _ = parse_events(self.run(cmd, prompt))
             return text
+        except HarnessError as exc:
+            role = "Reviewer" if reviewer else "Coder"
+            raise InfrastructureError(
+                f"{role} infrastructure failure for {model}: {exc}\n"
+                f"Inspect logs in {self.artifacts}; resolve access, timeout, or response-budget issues and "
+                "review preserved work manually before retrying. Do not rerun the coder just to fix reviewer output."
+            ) from exc
         finally:
             # Keep reported usage even when Pi exits nonzero or review parsing fails.
             log = self.artifacts / f"{record_index + 1:03d}.stdout.log"
@@ -160,10 +193,18 @@ class Runner:
                         event = json.loads(line)
                     except ValueError:
                         continue
-                    if event.get("type") == "message_end" and event.get("message", {}).get("role") == "assistant":
-                        usage.append(event["message"].get("usage", {}))
+                    if not isinstance(event, dict):
+                        continue
+                    message = event.get("message")
+                    if event.get("type") == "message_end" and isinstance(message, dict) and message.get("role") == "assistant":
+                        reported = message.get("usage")
                     elif event.get("type") == "compaction_end":
-                        usage.append(event.get("result", {}).get("usage", {}))
+                        result = event.get("result")
+                        reported = result.get("usage") if isinstance(result, dict) else None
+                    else:
+                        reported = None
+                    if isinstance(reported, dict):
+                        usage.append(reported)
             self.records[record_index]["usage"] = usage
 
     def checks(self):
@@ -174,6 +215,8 @@ class Runner:
         for cmd in [*CHECKS, ["node", "--test", *tests]]:
             try:
                 self.run(cmd)
+            except InfrastructureError:
+                raise
             except HarnessError as exc:
                 failures.append(str(exc))
         return "\n\n".join(failures)
@@ -190,14 +233,91 @@ def capture_changes(runner, head, plan, allowed):
     for path in paths:
         if not any(path == prefix.rstrip("/") or path.startswith(prefix.rstrip("/") + "/") for prefix in allowed):
             raise HarnessError(f"Out-of-scope change: {path}. Inspect manually; --allow-path can widen scope next run.")
-    diff = runner.git("diff", "--no-ext-diff", "--no-textconv", "--binary", "--no-renames", "HEAD", "--")
+    diff = runner.git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", "HEAD", "--")
     for path in filter(None, untracked):
-        diff += runner.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--no-index", "--", os.devnull, path], allowed=(0, 1))
+        diff += runner.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--no-index", "--", os.devnull, path], allowed=(0, 1))
     if not paths:
         raise HarnessError("No changes were produced; cannot claim completion.")
-    if len(diff.encode()) > 1_000_000:
-        raise HarnessError("Change set exceeds 1 MB; split the task rather than truncate review.")
+    # Git normally emits only a binary-path notice without --binary. Strip any
+    # patch encoding a local config might still produce; fingerprints retain
+    # mutation detection even when two binary versions have the same path/size.
+    diff = re.sub(r"^GIT binary patch\n.*?(?=^diff --git |\Z)",
+                  "Binary content omitted; inspect image/file path selectively.\n", diff, flags=re.M | re.S)
+    manifest = []
+    for path in paths:
+        file = runner.root / path
+        if file.is_symlink():
+            data = os.readlink(file).encode()
+        elif file.is_file():
+            data = file.read_bytes()
+        else:
+            manifest.append(f"{json.dumps(path)}: deleted")
+            continue
+        manifest.append(f"{json.dumps(path)}: sha256={hashlib.sha256(data).hexdigest()}")
+    diff += "\nChanged-file manifest (binary/image paths may be read selectively):\n" + "\n".join(manifest) + "\n"
     return paths, diff
+
+
+def split_review_changes(diff, budget):
+    """Split on lines without dropping content; repeat file headers on continuations."""
+    if budget < 1024:
+        raise InfrastructureError("Review context exceeds input budget; shorten task/context or split the task manually.")
+    parts, current, size, header = [], [], 0, ""
+    for line in diff.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            header = line
+        length = len(line.encode())
+        if length + len(header.encode()) > budget:
+            raise InfrastructureError("A diff line exceeds review input budget; split the oversized generated/text file manually.")
+        if size + length > budget:
+            parts.append("".join(current))
+            current = [header] if header and line != header else []
+            size = sum(len(s.encode()) for s in current)
+        current.append(line)
+        size += length
+    if current:
+        parts.append("".join(current))
+    if not parts or len(parts) > MAX_REVIEW_PARTS:
+        raise InfrastructureError(f"Review requires {len(parts)} parts (limit {MAX_REVIEW_PARTS}); split the task manually.")
+    return parts
+
+
+def review_changes(runner, prefix, diff):
+    # Reserve space for part labels and a single format-correction instruction.
+    reviews = []
+    try:
+        parts = split_review_changes(diff, MAX_REVIEW_PROMPT_BYTES - len(prefix.encode()) - 2048)
+        for index, part in enumerate(parts, 1):
+            prompt = (f"{prefix}\nTEXT CHANGE PART {index}/{len(parts)}:\n{part}\n"
+                      "This may be a partial diff. Inspect referenced source and other relevant files for task-wide correctness. "
+                      "Binary patches are excluded; read relevant image paths selectively. Do not treat absent diff parts as missing implementation.")
+            for formatting_attempt in range(2):
+                # Agent/provider failures are deliberately outside the schema retry.
+                text = runner.agent(REVIEWER_MODEL, REVIEWER_THINKING, prompt, reviewer=True)
+                try:
+                    review = parse_review(text)
+                    break
+                except HarnessError as exc:
+                    if formatting_attempt:
+                        raise InfrastructureError(f"Reviewer protocol failure after one formatting retry: {exc}") from exc
+                    prompt += f"\nYour previous completed response failed schema validation: {exc}. Return ONLY the required JSON object."
+            reviews.append(review)
+    except HarnessError as exc:
+        raise InfrastructureError(
+            f"Review infrastructure failure: {exc}\nLogs: {runner.artifacts}. "
+            "Inspect reviewer output and preserved work manually; fix model access/budgets/protocol before retrying. "
+            "The coder will not be rerun for this failure."
+        ) from exc
+    if len(reviews) == 1:
+        return reviews[0]
+    findings = []
+    for review in reviews:
+        for finding in review["findings"]:
+            if finding not in findings:
+                findings.append(finding)
+    return {"verdict": "NEEDS_REVISION" if findings else "APPROVED",
+            "summary": "\n".join(f"Part {i}: {r['summary']}" for i, r in enumerate(reviews, 1)),
+            "findings": findings, "escalate": any(r["escalate"] for r in reviews)}
 
 
 def complete_plan(plan, task, evidence):
@@ -236,7 +356,6 @@ def execute(args, runner):
         feedback = runner.checks()
         if not feedback:
             review_prompt = (f"Independently review ONLY this step against its completion criteria.\n{context}\n"
-                             f"COMPLETE DIFF (includes staged/untracked):\n{diff}\n"
                              f"Coder report (untrusted):\n{coder_report}\n"
                              "Lint, typecheck, and existing Node tests passed; this does not prove visual/native behavior. "
                              "Read relevant source/tests; check scope, regressions, stable keys, disabled controls, and task-specific criteria. "
@@ -245,7 +364,7 @@ def execute(args, runner):
                              '"findings":[{"file":"relative/path", "line":1, "message":"actionable issue"}], "escalate":false}. '
                              "Approval requires zero findings; revision requires at least one. "
                              "Set escalate=true if approval cannot be given confidently; no alternate reviewer is available.")
-            review = parse_review(runner.agent(REVIEWER_MODEL, REVIEWER_THINKING, review_prompt, reviewer=True))
+            review = review_changes(runner, review_prompt, diff)
             # Detect any reviewer-side changes, including changes outside the intended diff.
             _, after = capture_changes(runner, head, plan, args.allow_path)
             if after != diff:
