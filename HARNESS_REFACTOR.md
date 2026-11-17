@@ -63,6 +63,13 @@ evidence, creates/updates a nested recovery sub-plan under that task, and execut
 only remaining work. Already implemented work can proceed straight to fresh
 checks/review without another coder call or a new code diff.
 
+Recovery uses a persisted **task file scope**, recovered from the original saved
+task diff/manifest when available. Unrelated intervening **committed** files (such
+as a later harness refactor) stay untouched and are excluded from task diffs/review.
+Unrelated **dirty** files still block resume, even inside `src/`, `tests/`, or
+`docs/`. File scope is not hunk-level attribution: changes to the same task file
+remain visible against the original base and require review.
+
 Valid checkpoints preserve the original comparison base, phase, assessment,
 findings, and repair usage. A reviewer outage can resume review without repeating
 completed coding. File changes invalidate cached work as appropriate, but **do
@@ -78,6 +85,16 @@ not reset the repair budget**. An interrupted coder invocation consumes an attem
   ```
   Legacy logs may supply the base automatically. New checkpoints retain it;
   conflicting base references are rejected.
+- **Missing or ambiguous task scope:** the base alone does not establish file
+  ownership. Inspect the original task work, then explicitly list its files:
+  ```bash
+  python3 run_harness.py --resume --step 15 --task-path docs/verification/README.md --task-path tests/lessonScreen.test.cjs
+  ```
+  Repeat `--task-path` for every confirmed file when reconstructing scope. With an
+  existing scoped checkpoint, this flag explicitly adds files without dropping
+  the saved scope or resetting repairs. Use it if recovery needs a new task file.
+  Do not add unrelated harness files or broaden `--allow-path` merely to bypass a
+  historical comparison error.
 - **Unattributed task files:** inspect each file first. Move unrelated work away;
   explicitly acknowledge only task-related paths, repeating the flag as needed:
   ```bash

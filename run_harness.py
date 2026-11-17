@@ -226,7 +226,7 @@ class Runner:
         return "\n\n".join(failures)
 
 
-def capture_changes(runner, head, plan, allowed, recovery=False, base=None):
+def capture_changes(runner, head, plan, allowed, recovery=False, base=None, task_scope=None):
     if runner.git("rev-parse", "HEAD").strip() != head:
         raise HarnessError("Agent changed HEAD; inspect repository manually.")
     if (runner.root / "PLAN1.md").read_text() != plan:
@@ -237,11 +237,17 @@ def capture_changes(runner, head, plan, allowed, recovery=False, base=None):
     if recovery:
         names = [name for name in names if name != "PLAN1.md"]
         untracked = [name for name in untracked if name != "PLAN1.md"]
+    if task_scope is not None:
+        names = [name for name in names if name in task_scope]
+        untracked = [name for name in untracked if name in task_scope]
     paths = sorted(set(filter(None, names + untracked)))
     for path in paths:
         if not any(path == prefix.rstrip("/") or path.startswith(prefix.rstrip("/") + "/") for prefix in allowed):
             raise HarnessError(f"Out-of-scope change: {path}. Inspect manually; --allow-path can widen scope next run.")
-    pathspec = [".", ":(exclude)PLAN1.md"] if recovery else []
+    if recovery and not paths:
+        return [], "No new code diff. Assess existing committed implementation against the original task criteria.\n"
+    pathspec = ([f":(literal){name}" for name in sorted(task_scope)] if task_scope is not None else
+                [".", ":(exclude)PLAN1.md"] if recovery else [])
     diff = runner.git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", base, "--", *pathspec)
     for path in filter(None, untracked):
         diff += runner.run(["git", "diff", "--no-ext-diff", "--no-textconv", "--no-index", "--", os.devnull, path], allowed=(0, 1))
@@ -505,6 +511,8 @@ def execute(args, runner, checkpoint=None):
                     "Report unavailable verification honestly. An empty diff is allowed; independently review current sources. "
                     "Current diff covers only uncommitted changes, not necessarily all task implementation.\n"
                     f"Assessment: {json.dumps(assessment_result['assessment'])}\n")
+        if checkpoint:
+            context += f"Confirmed task file scope (do not modify other files): {json.dumps(checkpoint.data['task_scope'])}\n"
     runner.progress.update(phase="baseline checks", checks_passed=False, check_failures=None)
     baseline = runner.checks()
     runner.progress.update(check_failures=baseline, checks_passed=not baseline)
@@ -536,6 +544,8 @@ def execute(args, runner, checkpoint=None):
         capture_options = {"recovery": True} if recovery else {}
         if checkpoint:
             capture_options["base"] = checkpoint.data["base"]
+            if recovery:
+                capture_options["task_scope"] = set(checkpoint.data["task_scope"])
         _, diff = capture_changes(runner, head, plan, args.allow_path, **capture_options)
         (runner.artifacts / f"attempt-{attempt}.diff").write_text(diff)
         runner.progress.update(phase="post-change checks", checks_passed=False, check_failures=None)
@@ -561,6 +571,8 @@ def execute(args, runner, checkpoint=None):
                 checkpoint.save("reviewing")
             review = review_changes(runner, review_prompt, diff)
             runner.progress.update(review=review, phase="review validation")
+            if checkpoint:
+                checkpoint.save("reviewing", findings=review)
             # Detect any reviewer-side changes, including changes outside the intended diff.
             _, after = capture_changes(runner, head, plan, args.allow_path, **capture_options)
             if after != diff:
@@ -599,6 +611,7 @@ def main():
     parser.add_argument("--resume", action="store_true",
                         help="Assess partial work, persist a recovery sub-plan, and execute only remaining work")
     parser.add_argument("--base-ref", help="Original pre-task commit for legacy recovery without a checkpoint")
+    parser.add_argument("--task-path", action="append", default=[], help="Confirm a task file when saved scope is unavailable, or explicitly expand scope (repeatable)")
     parser.add_argument("--resume-path", action="append", default=[], help="Explicitly acknowledge an existing dirty task file (repeatable)")
     parser.add_argument("--restart-repairs", action="store_true", help="Acknowledge manual inspection and explicitly restart the repair budget")
     parser.add_argument("--max-repairs", type=int, choices=range(MAX_REPAIRS + 1), default=MAX_REPAIRS,
@@ -611,8 +624,8 @@ def main():
         parser.error("This harness requires Linux/macOS (POSIX repository locking).")
     if args.timeout < 1:
         parser.error("timeout must be positive")
-    if (args.base_ref or args.restart_repairs or args.resume_path) and not args.resume:
-        parser.error("base-ref, resume-path and restart-repairs require --resume")
+    if (args.base_ref or args.restart_repairs or args.resume_path or args.task_path) and not args.resume:
+        parser.error("base-ref, task-path, resume-path and restart-repairs require --resume")
     if any(Path(p).is_absolute() or ".." in Path(p).parts or p in ("", ".") for p in args.allow_path):
         parser.error("allow-path must be a relative file/directory, without '..'")
     parent = (args.log_dir or Path.home() / ".local/state/langnotebook-harness").resolve()

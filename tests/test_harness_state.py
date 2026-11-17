@@ -81,15 +81,18 @@ class StateTests(unittest.TestCase):
         with self.assertRaisesRegex(StateError, 'Repair limit changed'):
             self.state()
 
-    def test_new_committed_unrelated_file_is_not_absorbed(self):
+    def test_new_committed_unrelated_file_is_excluded_but_dirty_edit_blocks(self):
         self.state()
         self.args.base_ref = None
         (self.root / 'src/unrelated.txt').write_text('unrelated committed work')
         self.git('add', 'src/unrelated.txt')
         self.git('commit', '-qm', 'unrelated change')
+        resumed = self.state()
+        self.assertNotIn('src/unrelated.txt', resumed.data['task_scope'])
+        self.assertEqual((self.root / 'src/unrelated.txt').read_text(), 'unrelated committed work')
+        (self.root / 'src/unrelated.txt').write_text('new unrelated edit')
         with self.assertRaisesRegex(StateError, 'Unattributed'):
             self.state()
-        self.assertEqual((self.root / 'src/unrelated.txt').read_text(), 'unrelated committed work')
 
     def test_stale_assessment_invalidated_without_resetting_repairs(self):
         state = self.state()

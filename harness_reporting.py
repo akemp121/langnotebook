@@ -16,6 +16,8 @@ def resume_command(root, configuration, step, checkpoint):
     base = checkpoint.get("base") or configuration.get("base_ref")
     if base:
         command += ["--base-ref", base]
+    for path in configuration.get("task_path", []):
+        command += ["--task-path", path]
     for path in configuration.get("resume_path", []):
         command += ["--resume-path", path]
     for path in configuration.get("allow_path", []):
@@ -98,7 +100,8 @@ def failure_report(summary, progress, checkpoint, artifacts):
               "```bash", command, "```", "",
               "If the budget is exhausted, only after manual inspection append `--restart-repairs` to explicitly acknowledge a fresh budget.",
               "If no original base can be reconstructed, add `--base-ref <PRE_TASK_COMMIT>` after identifying the correct commit; never guess HEAD.",
-              "For unattributed files, move unrelated work away; add repeated `--resume-path PATH` only for inspected task-related files.",
+              "If saved task scope is missing/ambiguous, confirm task files with repeated `--task-path PATH`; the base alone does not confirm file ownership.",
+              "For unattributed files, move unrelated work away; add repeated `--resume-path PATH` or `--task-path PATH` only for inspected task-related files.",
               "Plan/checkpoint conflicts or another active run require manual resolution before resuming.", "",
               "## Artifacts", "", f"- Run directory: `{artifacts}`",
               "- `summary.json`: structured error, configuration, commands, usage, and progress.",

@@ -19,7 +19,7 @@ class ReportTests(unittest.TestCase):
         return {"repository": "/tmp/project with spaces", "seconds": 12.5,
                 "configuration": {"max_repairs": 3, "timeout": 900, "log_dir": "/tmp/private logs",
                                   "allow_path": ["src", "tests", "docs", "extra files"],
-                                  "resume_path": ["src/a b.ts"], "restart_repairs": True},
+                                  "resume_path": ["src/a b.ts"], "task_path": ["docs/confirmed task.md"], "restart_repairs": True},
                 "error": "OpenAI API error (403): no model access", "reported_cost": 0.123456,
                 "reported_tokens": 1234, "commands": [{"command": ["pi", "--model", h.REVIEWER_MODEL],
                                                         "returncode": 0, "seconds": 2}]}
@@ -44,6 +44,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(argv[argv.index('--step') + 1], '15')
         self.assertEqual(argv[argv.index('--log-dir') + 1], '/tmp/private logs')
         self.assertEqual(argv[argv.index('--resume-path') + 1], 'src/a b.ts')
+        self.assertEqual(argv[argv.index('--task-path') + 1], 'docs/confirmed task.md')
         self.assertEqual(argv[argv.index('--base-ref') + 1], 'abc123')
         self.assertEqual(argv[argv.index('--allow-path') + 1], 'extra files')
 

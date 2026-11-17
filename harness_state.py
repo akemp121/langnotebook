@@ -1,5 +1,7 @@
 """Durable harness state and non-destructive Git snapshots (standard library)."""
+import ast
 import hashlib
+import re
 import json
 import os
 from pathlib import Path
@@ -69,6 +71,61 @@ class TaskCheckpoint:
                 raise StateError("Legacy logs have divergent bases; supply --base-ref REF explicitly.")
         return base
 
+    def saved_scope(self, directories, base):
+        scopes = []
+        for directory in directories:
+            folder = Path(directory)
+            # Scope evidence must originate at the same pre-task base.
+            try:
+                if self.legacy_base([directory]) != base:
+                    continue
+            except StateError:
+                continue
+            diffs = sorted(folder.glob("attempt-*.diff"), key=lambda p: p.stat().st_mtime)
+            if not diffs:
+                continue
+            paths = set()
+            in_manifest = False
+            for line in diffs[-1].read_text().splitlines():
+                if line == "Changed-file manifest (binary/image paths may be read selectively):":
+                    in_manifest = True
+                    continue
+                if in_manifest:
+                    match = re.fullmatch(r'("(?:\\.|[^"\\])*"): (?:sha256=[a-f0-9]{64}|deleted)', line)
+                    if match:
+                        paths.add(json.loads(match[1]))
+                    continue
+                if not line.startswith("diff --git "):
+                    continue
+                raw = line[len("diff --git "):]
+                if raw.startswith('"'):
+                    tokens = re.findall(r'"(?:\\.|[^"\\])*"|\S+', raw)
+                    if len(tokens) != 2:
+                        raise StateError("Ambiguous saved task scope; confirm files with repeated --task-path PATH.")
+                    names = []
+                    for token in tokens:
+                        try:
+                            name = ast.literal_eval(token) if token.startswith('"') else token
+                        except (SyntaxError, ValueError) as exc:
+                            raise StateError("Unreadable saved task paths; confirm files with --task-path PATH.") from exc
+                        try:
+                            name = name.encode('latin1').decode('utf8')
+                        except (UnicodeError, ValueError):
+                            pass
+                        names.append(name[2:])
+                    paths.update(names)
+                else:
+                    match = re.fullmatch(r'a/(.*?) b/(.*)', raw)
+                    if not match or match[1] != match[2]:
+                        raise StateError("Ambiguous saved task scope; confirm files with repeated --task-path PATH.")
+                    paths.add(match[1])
+            paths.discard("PLAN1.md")
+            if paths:
+                scopes.append(paths)
+        if not scopes or any(scope != scopes[0] for scope in scopes[1:]):
+            raise StateError("Task file scope unavailable or ambiguous; confirm the task files with repeated --task-path PATH. --base-ref alone does not confirm scope.")
+        return scopes[0]
+
     def prepare(self, plan, step, fingerprint, prior):
         root = self.runner.root
         git_dir = Path(self.git("rev-parse", "--absolute-git-dir"))
@@ -97,18 +154,29 @@ class TaskCheckpoint:
         base = self.git("rev-parse", "--verify", base + "^{commit}")
         self.runner.run(["git", "merge-base", "--is-ancestor", base, "HEAD"])
         changed = self.changed(base)
+        explicit = set(getattr(self.args, "task_path", []) or [])
+        acknowledged = set(getattr(self.args, "resume_path", []) or [])
+        recorded_scope = old.get("task_scope") if old else None
+        if resume:
+            scope = (set(recorded_scope) if recorded_scope is not None else
+                     explicit or self.saved_scope(prior, base)) | explicit | acknowledged
+        else:
+            scope = set(changed)
+        if any(Path(name).is_absolute() or '..' in Path(name).parts or name in ('', '.', 'PLAN1.md')
+               or (root / name).is_dir() for name in scope):
+            raise StateError("Task scope must contain relative file paths, excluding PLAN1.md.")
         allowed = self.args.allow_path
-        for name in changed:
+        for name in scope | self.changed("HEAD"):
             if not any(name == p.rstrip("/") or name.startswith(p.rstrip("/") + "/") for p in allowed):
                 raise StateError(f"Unrelated/out-of-scope task change: {name}; do not absorb it into recovery.")
         current = self.files()
         dirty = self.changed("HEAD")
-        acknowledged = set(getattr(self.args, "resume_path", []) or [])
-        known = set(old.get("task_paths", [])) if old else set()
-        unattributed = (dirty | (changed if old else set())) - known - acknowledged
+        unattributed = dirty - scope
         if resume and unattributed:
             raise StateError("Unattributed working-tree/committed changes: " + ", ".join(sorted(unattributed)) +
                              ". Move unrelated work away or explicitly acknowledge task files with --resume-path PATH.")
+        self.scope = scope
+        self.protected = {name: value for name, value in current.items() if name not in scope and name != "PLAN1.md"}
         # A complete backup is made before assessment, plan edits, checks or coding.
         snapshot = self.runner.artifacts / "snapshot"
         snapshot.mkdir()
@@ -140,12 +208,22 @@ class TaskCheckpoint:
             self.data["budget_restart_acknowledged"] = True
         elif self.data["coder_started"] and self.data["repairs_used"] >= self.args.max_repairs and self.data["phase"] not in ("coded", "checked", "reviewing"):
             raise StateError("Repair budget exhausted. Inspect logs/work first; --resume --restart-repairs explicitly acknowledges a fresh budget.")
+        self.data["task_scope"] = sorted(scope)
         self.save(self.data["phase"])
 
     def save(self, phase, **values):
         self.data.update(values, phase=phase)
-        self.data["files"] = self.files()
-        self.data["task_paths"] = sorted(self.changed(self.data["base"]))
+        current = self.files()
+        if not self.args.resume:
+            self.scope.update(self.changed(self.data["base"]))
+        unexpected = {name for name in set(current) | set(self.protected)
+                      if name not in self.scope and name != "PLAN1.md" and current.get(name) != self.protected.get(name)}
+        if unexpected:
+            raise StateError("Changes outside task scope: " + ', '.join(sorted(unexpected)) +
+                             ". Inspect preserved work and explicitly acknowledge scope expansion with --task-path PATH.")
+        self.data["files"] = current
+        self.data["task_scope"] = sorted(self.scope)
+        self.data["task_paths"] = sorted(self.changed(self.data["base"]) & self.scope)
         temporary = self.path.with_suffix(".tmp")
         temporary.write_text(json.dumps(self.data, indent=2) + "\n")
         temporary.chmod(0o600)

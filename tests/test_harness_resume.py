@@ -39,7 +39,8 @@ class ResumeTests(unittest.TestCase):
         self.logs = parent / "runs" / "run-current"
         self.logs.mkdir(parents=True)
         self.runner = h.Runner(self.root, self.logs, 5)
-        self.args = argparse.Namespace(step=None, resume=True, max_repairs=3, allow_path=["src", "tests", "docs"])
+        self.args = argparse.Namespace(step=None, resume=True, max_repairs=3, allow_path=["src", "tests", "docs"],
+                                       task_path=["src/preview.txt", "src/tests.txt", "src/progress.txt"])
         self.git("init", "-q")
         self.git("config", "user.name", "Test")
         self.git("config", "user.email", "test@example.invalid")
@@ -158,7 +159,7 @@ class ResumeTests(unittest.TestCase):
         complete["remaining_actions"] = []
         approval = {"verdict": "APPROVED", "summary": "Complete", "findings": [], "escalate": False}
         with tempfile.TemporaryDirectory() as parent, patch.object(h, "ROOT", self.root), \
-                patch.object(sys, "argv", ["run_harness.py", "--resume", "--base-ref", "HEAD^", "--log-dir", parent]), \
+                patch.object(sys, "argv", ["run_harness.py", "--resume", "--base-ref", "HEAD^", "--task-path", "src/preview.txt", "--log-dir", parent]), \
                 patch.object(h.Runner, "agent", side_effect=[json.dumps(complete), json.dumps(approval)]) as agent, \
                 patch.object(h.Runner, "checks", return_value=""):
             self.assertEqual(h.main(), 0)
