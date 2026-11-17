@@ -1,29 +1,94 @@
 # Step 15 — refactor verification
 
-Verified against source revision `db7c7d6` (steps 1–14), plus the step-15 tests and
-records here. **The original static shell is preserved in the checked web
-viewports.** No application behavior, curriculum, dependency, or native project
-was changed. This is not native-device or accessibility certification.
+Fresh automated revalidation on **2026-11-17 (UTC)** checked HEAD
+`0de969a398786d422570da69d6d64c0210f43559`. The pre-existing harness-owned
+`PLAN1.md` working-tree change was left untouched; this follow-up changes only
+this verification record. No application behavior, curriculum, dependency,
+native project, or test framework was changed.
 
-## Checks run
+**Evidence scopes differ:** the automated results below are fresh at that HEAD;
+the browser measurements, screenshots, and visual comparison are historical,
+recorded against `db7c7d6` plus the step-15 tests/artifacts. No browser walkthrough
+or screenshot comparison was repeated in this follow-up. The historical evidence
+shows the original static shell preserved in its checked web viewports, not fresh
+native-device or accessibility verification.
 
-| Command | Result |
-| --- | --- |
-| `npm run lint` | Pass |
-| `npm run typecheck` | Pass |
-| `node --test tests/*.test.cjs` | **73 pass**, 0 fail/skip |
-| `python3 -m unittest discover -s tests -p 'test_*.py'` | **20 pass** (existing harness tests, not UI coverage) |
-| Optional browser walkthrough below | Pass; no browser `pageerror` events |
-| `git diff --check` | Pass |
+## Fresh checks run
+
+Environment: Linux, Node `v22.22.1`, npm `9.2.0`, Python `3.14.4`.
+All four commands ran against the checked revision and exited **0**.
+
+| Command | Started (UTC) | Fresh result |
+| --- | --- | --- |
+| `npm run lint` | 05:22:35 | Pass (`expo lint`) |
+| `npm run typecheck` | 05:22:37 | Pass (`tsc --noEmit`) |
+| `node --test tests/*.test.cjs` | 05:22:39 | **73 pass**, 0 fail/cancelled/skip/todo |
+| `python3 -m unittest discover -s tests -p 'test_*.py'` | 05:22:40 | **78 pass**, `OK` (existing harness tests, not UI coverage) |
+| `git diff --check` | After checks and after this record update | Pass |
+
+The fresh **78-test** Python result supersedes the historical **20-test** result;
+the latter did not cover the expanded harness suite. Python tests deliberately
+exercise failure/recovery paths in temporary repositories, so their logs include
+simulated failure reports; the overall suite passed.
+
+Full command output for this follow-up is in
+`/tmp/langnotebook-step15-recheck-0de969a/{lint,typecheck,node,python}.log` in the
+execution environment (temporary, not a durable repository artifact). The table
+above preserves the command results; the Node and Python output summaries were:
+
+```text
+# tests 73
+# suites 0
+# pass 73
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+
+Ran 78 tests in 3.601s
+
+OK
+```
 
 There is no `npm test` script. Existing Node tests use the built-in runner and
-stub native primitives/navigation; no framework was added. Four additional Node
-checks exercise actual legacy/parameterized route-to-content parity, baseline
-content order, a single scroll container, disabled controls, and the absence of
-Android hardware-back listeners on iOS/web. Existing tests cover the Android
-listener's return value, list target, and cleanup **with mocks only**.
+stub native primitives/navigation; no framework was added. The previously added
+four Node checks exercise actual legacy/parameterized route-to-content parity,
+baseline content order, a single scroll container, disabled controls, and the
+absence of Android hardware-back listeners on iOS/web. Existing tests cover the
+Android listener's return value, list target, and cleanup **with mocks only**.
 
-## Browser walkthrough
+## Fresh source review
+
+Reviewed the current route/shared-screen/back-hook/layout/catalog, configurable
+preview controls, `AppText`, synthetic composition, and associated route tests:
+
+- Original route wrappers still supply the same catalog IDs as the parameterized
+  route. That route rejects array/non-string params; `LessonScreen` provides the
+  readable missing-lesson fallback and shared return action.
+- Catalog list order remains explicitly Alphabet → Grammar; the synthetic
+  curriculum resolves through the shared route but is excluded from the list.
+- The shared hook retains `dismissTo('/')` and its focused Android-only hardware
+  listener with cleanup. Actual native navigation remains unverified.
+- `LessonLayout` retains one continuous scroll container, inset-based padding,
+  compact spacing, and a 48 × 48 circular back control. It renders arbitrary
+  activity children and supports the existing `withCard: false` opt-out.
+- Alphabet/classification/conversation previews retain disabled controls without
+  action handlers. Stable fixture IDs and configurable props remain intact; the
+  tone fixture places its self-framed static graphic between paragraphs.
+- `AppText` retains variant-specific native scaling caps. Browser font-size
+  multiplication cannot verify OS text scaling or compact-plus-large-text layout.
+
+`git diff --quiet db7c7d6 HEAD -- src package.json package-lock.json bun.lock`
+exited **0**: source and dependency manifests are unchanged from the recorded
+browser baseline. Subsequent test changes are covered by the fresh suites above.
+This supports retaining the historical browser evidence; it does **not** turn it
+into a fresh walkthrough. No repair finding required an application change.
+
+## Historical browser walkthrough (not rerun)
+
+The following environment, observations, measurements, and linked artifacts are
+from the earlier walkthrough, not the fresh automated run above. Its recorded
+result was **pass**, with no browser `pageerror` events.
 
 - Expo **58.0.23**, `npm run web -- --port 8081`, CI mode.
 - Already available Playwright **1.65.0**, headless Chromium **158.0.8127.18**;
@@ -58,9 +123,9 @@ listener's return value, list target, and cleanup **with mocks only**.
 | Enlarged text approximation | At 390 px, browser-rendered text font sizes **and line heights** were multiplied by 1.5. Text/choices wrap and both final paragraphs remain reachable; disabled state is retained and no horizontal overflow was measured. This is a browser stress approximation, **not OS font scaling**; it does not reproduce native `AppText` scaling caps. Compact + enlarged text together was not tested. |
 | Synthetic composition/reuse | `/lessons/synthetic-tone-lab/pitch-paths` opens through the same shared route/layout, with prose → self-framed static dot graphic → prose, then reused alphabet and three-choice classification cards. All nine preview controls stay disabled. Separate Node fixtures verify synthetic alphabet, three-category classification, and French/German conversation props/reordering without renderer changes. The standalone French/German fixture was not visually rendered. |
 
-## Baseline visual comparison
+## Historical baseline visual comparison (not repeated)
 
-Compared all eight positions in [the original baseline](../baseline/README.md)
+The earlier walkthrough compared all eight positions in [the original baseline](../baseline/README.md)
 with the same numbered [new screenshots](screenshots/). Titles, Michroma/Roboto
 typography, 24 px lesson side padding, white background, pale rounded cards,
 control wrapping, spacing, circular back control, fixtures, and continuation
@@ -82,8 +147,9 @@ Additional evidence:
 
 ## Remaining device coverage and limitations
 
-`adb devices` lists **no connected Android device/emulator**; this Linux
-environment has no `xcrun`/iOS simulator. The following remain **unverified**:
+Fresh environment check: `adb devices` lists **no connected Android
+device/emulator**, and `xcrun` is unavailable on this Linux host. No native checks
+were performed. The following remain **unverified**:
 
 - Real Android hardware/gesture back and iOS navigation/gestures, cold starts and
   native deep links (mocked hooks and web history do not establish these).
@@ -94,8 +160,12 @@ environment has no `xcrun`/iOS simulator. The following remain **unverified**:
 - CJK/RTL/script-specific fonts, direction, glyph coverage, and real multilingual
   teaching quality. Metadata and invented Latin-script examples prove none of these.
 
-No new web-shell regression was observed in the exercised cases. Missing emoji
-glyphs remain a known browser-environment limitation. Device follow-up is needed
-before claiming native/accessibility coverage. Audio, recording, AI, scoring,
-progress, persistence, and real curriculum remain deliberately unimplemented.
-This completes **step 15 only**; `PLAN1.md` was not edited.
+No web-shell regression was reported in the historical exercised cases; fresh
+automated checks and source review found no additional regression. Missing emoji
+glyphs remain a known browser-environment limitation. Step-15 automated
+revalidation and the results record are complete; browser freshness and the device
+coverage above are **not** claimed. Device follow-up is needed before claiming
+native/accessibility coverage. Audio, recording, AI, scoring, progress,
+persistence, and real curriculum remain deliberately unimplemented. Only step 15
+was addressed; no later work was started and `PLAN1.md` was not edited by this
+follow-up.

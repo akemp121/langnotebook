@@ -42,7 +42,15 @@ Before touching Expo, Router, or React Native APIs, follow `AGENTS.md`: check th
 
 - [x] **14. Write a short authoring guide.** Document where lessons live, how to register/order them, ID conventions, supplying activity props, and embedding a custom component. Note language/script metadata and current font limitations without claiming CJK/RTL support has been validated. **Done when:** another developer can add a lesson or custom activity without copying a route or modifying the notebook renderer. **Recorded:** Harness: lint, typecheck, Node tests, and independent review passed; visual/native checks not verified. Run artifacts: `/home/akemp121/.local/state/langnotebook-harness/run-lqmrzke7`.
 
-- [ ] **15. Verify the refactor and record results.** Walk through the original and parameterized routes, invalid IDs, lesson ordering, back behavior, long scrolling, compact layout, large text, and disabled controls. Check the synthetic examples for reuse and arbitrary composition. Run npm run lint, `npm run typecheck`, and any existing tests. **Done when:** checks pass, the original shell is preserved, and device coverage or remaining issues are honestly recorded. Do not introduce a test framework just to complete this static-shell milestone.
+- [x] **15. Verify the refactor and record results.** Walk through the original and parameterized routes, invalid IDs, lesson ordering, back behavior, long scrolling, compact layout, large text, and disabled controls. Check the synthetic examples for reuse and arbitrary composition. Run npm run lint, `npm run typecheck`, and any existing tests. **Done when:** checks pass, the original shell is preserved, and device coverage or remaining issues are honestly recorded. Do not introduce a test framework just to complete this static-shell milestone.
+  <!-- harness-recovery:start -->
+  **Recovery plan**
+  - [x] Freshly run npm run lint, npm run typecheck, node --test tests/*.test.cjs, and python3 -m unittest discover -s tests -p 'test_*.py' against the current HEAD; capture actual results, especially the expanded Python suite.
+  - [x] Refresh verification provenance and results with the checked revision and current logs, distinguishing historical browser evidence from any fresh walkthrough and avoiding an unconditional completion claim while freshness remains unverified.
+  - [x] When target devices are available, verify native back/direct-entry behavior, scrolling, safe areas, touch targets, disabled controls, and OS large text including compact-plus-large-text layout. Until then, retain these as explicit coverage gaps rather than treating browser or mocked checks as native verification.
+  - [x] Revalidate lint, typecheck, and existing tests.
+  - [x] Independent review against the original completion criteria.
+  <!-- harness-recovery:end --> **Recorded:** Harness: lint, typecheck, Node tests, and independent review passed; visual/native checks not verified. Run artifacts: `/home/akemp121/.local/state/langnotebook-harness/run-9blbomlo`.
 
 ## Explicitly deferred
 
