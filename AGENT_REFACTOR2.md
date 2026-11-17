@@ -1,5 +1,31 @@
 # Harness refactor 2
 
+## Quick start
+
+Run from the project folder with dependencies installed and Pi authenticated. Models are fixed: **Sol/high codes and assesses; Luna/low reviews**. Your API key must allow both.
+
+| What you want | Command |
+| --- | --- |
+| Start the next unchecked task in `PLAN1.md` | `python3 run_harness.py` |
+| Resume a partial/failed task | `python3 run_harness.py --resume` |
+| Choose a specific unfinished task | Add `--step 15` to either command |
+| See all options | `python3 run_harness.py --help` |
+
+- **Starting fresh:** commit your current work first; normal runs require a clean Git tree.
+- **Resuming:** existing work is assessed, a recovery checklist is added under the task, and only remaining work is attempted. Checks and review still run. Repair usage survives restarts.
+- **Automatic fixes:** failures/rejections allow up to **three coder repairs**. Success checks off one task and stops; inspect and commit the results yourself.
+- **On failure:** open the printed `failure.md` and use its recovery command. It includes errors, progress, cost, and log locations. Resolve access/scope issues before retrying.
+
+**Only when requested or needed:**
+
+- Unknown original base: `python3 run_harness.py --resume --base-ref PRE_TASK_COMMIT` — replace the placeholder with the commit **before** task work.
+- Unattributed task file: add `--resume-path src/path/to/file` only after confirming it belongs to this task; move unrelated work away.
+- Exhausted repairs: after manual inspection, run `python3 run_harness.py --resume --restart-repairs` to explicitly grant a fresh budget.
+
+Snapshots preserve pre-edit files/index/plan. Nothing is automatically reset, stashed, or committed. Logs default to `~/.local/state/langnotebook-harness/run-*`; `summary.json` contains this run's reported cost. Keep logs private. [Full usage and safety notes](HARNESS_REFACTOR.md).
+
+## Completed implementation plan
+
 Implement in order; keep successful runs limited to one task, with checks + independent approval before marking it complete. Never auto-commit or advance to another task.
 
 1. [x] **Fix model configuration.** Hardcode coder/assessment to `openai/gpt-6.1-sol` with `high` reasoning and reviewer to `openai/gpt-6-luna` with `low` reasoning. Remove model/thinking CLI requirements and automatic Sol reviewer substitution. Report access errors clearly; listing a model does not prove access. **Verified:** fixed role constants and logged settings; no model/thinking CLI flags or Sol reviewer fallback. Provider access errors include the model, original error, and permissions guidance. All 24 harness tests, 73 Node tests, lint, and typecheck pass. No paid API calls made; Luna access remains unverified. Assessment/resume remains deferred to step 4.
@@ -16,4 +42,4 @@ Implement in order; keep successful runs limited to one task, with checks + inde
 
 7. [x] **Provide actionable failure reports.** Save a concise Markdown report alongside raw logs: task/phase, accomplished vs remaining work, check failures, reviewer findings, attempts, model/API errors, usage/cost, and exact resume command. Print its location and recovery command on failure. On success, retain existing completion evidence and checkbox behavior. **Verified:** failures/interruption write `failure.md` beside `summary.json` and raw logs, print its path and a shell-quoted resume command preserving task, log directory, limits, base, and acknowledged scope. Reports distinguish assessment/coder claims from verified checks/review, include durable repair usage and per-run cost, and explain missing bases, scope conflicts, and explicit budget restarts without automatically acknowledging them. Early preflight failures still report the selected task when available. Success retains approval/checkbox behavior and creates no failure report. All 69 harness tests, 73 Node tests, lint, and typecheck pass; no paid API calls made. Step 8 remains untouched.
 
-8. **Test and document.** Add paid-call-free tests for fixed role settings, three-repair exhaustion, feedback delivery, infrastructure errors, binary-free prompts, committed/dirty resume, unrelated-change rejection, nested plan parsing, no-op approval, interruption checkpoints, and repair-budget persistence. Run harness tests, existing Node tests, lint, and typecheck. Update usage docs with `python3 run_harness.py`, `python3 run_harness.py --resume`, and an optional explicit-base example.
+8. [x] **Test and document.** Add paid-call-free tests for fixed role settings, three-repair exhaustion, feedback delivery, infrastructure errors, binary-free prompts, committed/dirty resume, unrelated-change rejection, nested plan parsing, no-op approval, interruption checkpoints, and repair-budget persistence. Run harness tests, existing Node tests, lint, and typecheck. Update usage docs with `python3 run_harness.py`, `python3 run_harness.py --resume`, and an optional explicit-base example. **Verified:** audited existing coverage and added acceptance tests for actual coder/reviewer CLI flags, binary assets through capture-to-review, and a reviewer outage followed by multiple resumptions sharing one three-repair budget. Replaced obsolete usage instructions in `HARNESS_REFACTOR.md` with current start/resume/base examples, fixed models, scope acknowledgements, explicit budget restart, snapshots/checkpoints, failure reports, cost caveats, and offline validation commands. All 72 harness tests, 73 Node tests, lint, typecheck, CLI help, and diff whitespace checks pass. No runtime behavior changed and no paid API calls made.
